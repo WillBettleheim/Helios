@@ -1,0 +1,46 @@
+{
+  "training_stats": {
+    "means": {
+      "heart_rate": 63.403983926521235,
+      "blood_oxygen": 97.39070034443169,
+      "systolic_bp": 107.99199770378874,
+      "diastolic_bp": 77.51741676234215,
+      "body_temp": 98.69848450057405,
+      "sleep_duration": 6.975763490241102,
+      "sleep_quality": 7.7411710677382315,
+      "physical_activity": 6.005614236509758,
+      "stress_level": 3.0994374282433985,
+      "mood_score": 7.337301951779564
+    },
+    "stds": {
+      "heart_rate": 7.805950869262195,
+      "blood_oxygen": 2.2245825916319326,
+      "systolic_bp": 17.8391491885228,
+      "diastolic_bp": 12.235973683981209,
+      "body_temp": 0.4047087931832711,
+      "sleep_duration": 1.2254190067060915,
+      "sleep_quality": 1.773432396025612,
+      "physical_activity": 1.720393864065026,
+      "stress_level": 1.468281571842868,
+      "mood_score": 1.6941074886861127
+    },
+    "medians": {
+      "heart_rate": 62.43,
+      "blood_oxygen": 97.74,
+      "systolic_bp": 106.59,
+      "diastolic_bp": 80.25,
+      "body_temp": 98.72,
+      "sleep_duration": 6.96,
+      "sleep_quality": 8.02,
+      "physical_activity": 6.08,
+      "stress_level": 3.05,
+      "mood_score": 7.39
+    },
+    "training_size": 871
+  },
+  "model_params": {
+    "contamination": 0.08,
+    "random_state": 42
+  },
+  "training_timestamp": "2026-10-18T17:35:45.718599"
+}

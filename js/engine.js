@@ -33,29 +33,35 @@ window.H = window.H || {};
     const pts = [];
     for (let d = 1; d <= day; d++) if (arr[d] != null) pts.push([d, arr[d]]);
     const r = { ind, status: 0, reasons: [], pts, trending: false };
+    // The person's own baseline when one is known, otherwise the catalogue's preflight default.
+    const B = (ctx.bases && ctx.bases[ind.id]) || (ind.base ? { mean: ind.base[0], sd: ind.base[1], source: 'preflight' } : null);
+    r.base = B;
     if (!pts.length) { r.noData = true; return r; }
 
     const sign = ind.bad === 'up' ? 1 : -1;
+    const zMon = ctx.zMon || 2, zAct = ctx.zAct || 3;
     const k = ind.window || (ind.cadence <= 2 ? 3 : 1);
     r.current = mean(pts.slice(-k).map((p) => p[1]));
     r.latestDay = pts[pts.length - 1][0];
     r.latest = pts[pts.length - 1][1];
 
-    const centerAt = (d) => (ind.base ? ind.base[0] + (ind.expected ? ind.expected(d) : 0) : null);
-    if (ind.base) {
+    const hasMean = !!(B && B.mean != null);
+    const centerAt = (d) => (hasMean ? B.mean + (ind.expected ? ind.expected(d) : 0) : null);
+    if (hasMean) {
       r.center = centerAt(day);
-      r.sd = ind.base[1];
+      r.sd = B.sd;
       r.z = (r.current - r.center) / r.sd;
       r.zBad = r.z * sign;
     }
-    const useZ = ind.base && ind.useZ !== false;
+    const useZ = hasMean && ind.useZ !== false;
     const raise = (lvl, msg) => { r.status = Math.max(r.status, lvl); r.reasons.push(msg); };
     const u = ind.unit;
 
     if (useZ) {
-      const label = `${Math.abs(r.z).toFixed(1)} SD ${r.z > 0 ? 'above' : 'below'} your ${ind.expected ? 'expected in-flight trajectory' : 'preflight baseline'}`;
-      if (r.zBad >= 3) raise(2, label);
-      else if (r.zBad >= 2) raise(1, label);
+      const what = ind.expected ? 'expected in-flight trajectory' : B.source === 'preflight' ? 'preflight baseline' : 'personal baseline';
+      const label = `${Math.abs(r.z).toFixed(1)} SD ${r.z > 0 ? 'above' : 'below'} your ${what}`;
+      if (r.zBad >= zAct) raise(2, label);
+      else if (r.zBad >= zMon) raise(1, label);
     }
     const L = ind.limits || {};
     if (L.urgent != null && crossed(r.current, L.urgent, sign)) raise(3, `Beyond urgent limit (${L.urgent} ${u})`);
@@ -64,7 +70,7 @@ window.H = window.H || {};
 
     // Trend over the last 21 days, projected forward.
     if (ind.cumulative) {
-      r.horizon = H.MISSION.plannedDays - day;
+      r.horizon = Math.max(0, (ctx.plannedDays || H.MISSION.plannedDays) - day);
       r.projected = r.current + (ctx.doseRate || 0) * r.horizon;
       r.slopeWeek = (ctx.doseRate || 0) * 7;
       if (r.status === 0 && r.projected >= ind.projectLimit) {
@@ -81,7 +87,7 @@ window.H = window.H || {};
         if (r.status === 0) {
           const zP = useZ ? ((r.projected - centerAt(day + 14)) / r.sd) * sign : -Infinity;
           const limHit = L.monitor != null && crossed(r.projected, L.monitor, sign);
-          if (zP >= 3 || limHit) {
+          if (zP >= zAct || limHit) {
             r.status = 1; r.trending = true;
             r.reasons.push(`Trending toward threshold — projected ${fmt(r.projected, ind.dec)} ${u} in 14 days`);
           }
@@ -220,16 +226,84 @@ window.H = window.H || {};
     return out.sort((a, b) => b.level - a.level);
   }
 
+  /*
+   * Personal baselines. Order of preference:
+   *  1. "Normal for me": the 14 days before the day the person marked a level as their normal.
+   *  2. Preflight: readings dated before mission start, or values typed in during setup.
+   *  3. Learned: after 7 in-flight readings. Once there are 7+ readings older than 14 days the
+   *     baseline becomes adaptive — an exponentially weighted mean (30-day half-life) of those
+   *     older readings, skipping outliers. The 14-day lag stops a developing problem from
+   *     quietly becoming the new normal.
+   * Spread is shrunk toward the catalogue SD (4 pseudo-observations) so a handful of readings
+   * cannot produce an unrealistically tight band.
+   */
+  const CALIBRATION_N = 7, LAG = 14, HALF_LIFE = 30, PRIOR_N = 4;
+  function personalBaselines(profile, cd) {
+    const out = {}, day = cd.day;
+    H.INDICATORS.forEach((ind) => {
+      if (!ind.base || ind.derived) return;
+      const pop = ind.base;
+      const pts = [];
+      for (let d = 1; d <= day; d++) if (cd.series[ind.id][d] != null) pts.push([d, cd.series[ind.id][d]]);
+      const manual = profile.baseline && Number.isFinite(profile.baseline[ind.id]) ? [profile.baseline[ind.id]] : [];
+      const preVals = (cd.pre[ind.id] || []).concat(manual);
+      const rebase = profile.rebase && profile.rebase[ind.id];
+      let vals, w, source;
+
+      if (rebase) {
+        vals = pts.filter((p) => p[0] > rebase - 14 && p[0] <= rebase).map((p) => p[1]);
+        source = 'rebased';
+      } else if (preVals.length) {
+        vals = preVals; source = 'preflight';
+      } else if (ind.expected) {
+        vals = []; source = 'default';      // trajectory indicators keep the population model
+      } else if (pts.length < CALIBRATION_N) {
+        out[ind.id] = { mean: null, sd: pop[1], source: 'calibrating', n: pts.length, need: CALIBRATION_N };
+        return;
+      } else {
+        const lagged = pts.filter((p) => p[0] <= day - LAG);
+        if (lagged.length >= CALIBRATION_N) {
+          const m0 = median(lagged.map((p) => p[1]));
+          const keep = lagged.filter((p) => Math.abs(p[1] - m0) <= 3 * pop[1]);
+          vals = keep.map((p) => p[1]);
+          w = keep.map((p) => Math.pow(0.5, (day - LAG - p[0]) / HALF_LIFE));
+          source = 'adaptive';
+        } else {
+          vals = pts.slice(0, CALIBRATION_N).map((p) => p[1]);
+          source = 'learned';
+        }
+      }
+      if (!vals.length) { out[ind.id] = { mean: pop[0], sd: pop[1], source: 'default', n: 0 }; return; }
+      w = w || vals.map(() => 1);
+      const W = w.reduce((s, x) => s + x, 0);
+      const m = vals.reduce((s, x, i) => s + x * w[i], 0) / W;
+      const n = vals.length;
+      const s2 = n > 1 ? vals.reduce((s, x, i) => s + w[i] * (x - m) ** 2, 0) / W * n / (n - 1) : 0;
+      const sd = Math.sqrt(((n - 1) * s2 + PRIOR_N * pop[1] ** 2) / (n - 1 + PRIOR_N));
+      out[ind.id] = { mean: m, sd, source, n };
+    });
+    return out;
+  }
+  function median(a) { const s = a.slice().sort((x, y) => x - y); return s.length ? (s[(s.length - 1) >> 1] + s[s.length >> 1]) / 2 : null; }
+
+  const SENSITIVITY = {
+    sensitive: { label: 'Sensitive', zMon: 1.5, zAct: 2.5, note: 'Earlier warnings, more false alarms' },
+    standard: { label: 'Standard', zMon: 2, zAct: 3, note: 'Balanced (default)' },
+    conservative: { label: 'Conservative', zMon: 2.5, zAct: 3.5, note: 'Fewer alerts, only clear deviations' },
+  };
+
   function assessEnv(ds) {
     const env = {};
     H.ENV_INDICATORS.forEach((ind) => { env[ind.id] = assessIndicator(ind, ds.env[ind.id], H.MISSION.day, {}); });
     return env;
   }
 
-  function assessCrew(c, ds, checkin) {
-    const day = H.MISSION.day, cd = ds.crew[c.id];
+  // opts: { day, bases, zMon, zAct, plannedDays } — used for a personal profile.
+  function assessCrew(c, ds, checkin, opts = {}) {
+    const day = opts.day || H.MISSION.day, cd = ds.crew[c.id];
+    const ctx = Object.assign({}, cd, opts);
     const inds = {};
-    H.INDICATORS.forEach((ind) => { inds[ind.id] = assessIndicator(ind, cd.series[ind.id], day, cd); });
+    H.INDICATORS.forEach((ind) => { inds[ind.id] = assessIndicator(ind, cd.series[ind.id], day, ctx); });
     const env = assessEnv(ds);
 
     const domains = H.DOMAINS.map((dm) => {
@@ -252,5 +326,5 @@ window.H = window.H || {};
     return { crew: c, inds, env, domains, insights, readiness, overall: Math.max(...domains.map((d) => d.status)) };
   }
 
-  Object.assign(H, { LEVELS, LEVEL_LABEL, ESCALATION, fmt, assessIndicator, assessCrew, assessEnv });
+  Object.assign(H, { LEVELS, LEVEL_LABEL, ESCALATION, SENSITIVITY, fmt, assessIndicator, assessCrew, assessEnv, personalBaselines });
 })(window.H);

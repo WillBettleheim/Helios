@@ -70,6 +70,7 @@ window.H = window.H || {};
       acks: perCrew(s.acks, (o) => Object.fromEntries(Object.entries(obj(o)).map(([k, v]) => [str(k, 40), int(v, -1e5, 1e5, 0)]))),
       queue: arr(s.queue).map((q) => ({ day: int(q.day, -1e5, 1e5, 0), title: str(q.title, 200), kb: num(q.kb, 0, 1e5, 0), crewName: str(q.crewName, 60), t: num(q.t, 0, 1e15, 0) })),
       prefs: { glove: !!prefs.glove, toured: !!prefs.toured, autoLockMin: int(prefs.autoLockMin, 1, 240, 10), lastSync: str(prefs.lastSync, 120),
+        termsVersion: str(prefs.termsVersion, 10), termsAt: num(prefs.termsAt, 0, 1e15, 0),
         sync: { url: str(sync.url, 200) || 'http://localhost:8787', device: str(sync.device, 40) || 'Tablet-1', delay: !!sync.delay } },
     };
     const p = profile(s.profile);

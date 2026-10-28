@@ -8,6 +8,7 @@ window.H = window.H || {};
   const { esc, store } = app;
   const T = app.T;
   let installEvt = null, rec = null, listening = false, lastHeard = '';
+  const ui = { pinForm: false };
 
   app.addIcon('settings', '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>');
   app.addView({ id: 'settings', label: 'Settings', group: 'me', icon: 'settings', render });
@@ -110,6 +111,7 @@ window.H = window.H || {};
         <div class="card"><h3>${T('Language')}</h3>
           <div class="choice">${H.LANGS.map(([k, n]) => `<label><input type="radio" name="lang" value="${k}" data-change="set-lang" ${H.getLang() === k ? 'checked' : ''}><span>${n}</span></label>`).join('')}</div>
           <p class="muted small">Navigation, headings and common controls are translated; detailed medical text is still English.</p></div>
+        <div class="card"><h3>${T('Guided tour')}</h3><p class="muted small">${T('A one-minute walk through the dashboard.')}</p><button class="btn" data-action="tour-start">${T('Take the tour')}</button></div>
         <div class="card"><h3>${T('Glove mode')}</h3>
           <label class="switch"><input type="checkbox" data-change="glove" ${p.glove ? 'checked' : ''}><span></span>${T('Larger touch targets and text for use with gloves or in turbulence')}</label></div>
         <div class="card"><h3>🎙 ${T('Voice control')}</h3>
@@ -119,6 +121,16 @@ window.H = window.H || {};
         <div class="card"><h3>⤓ ${T('Install app')}</h3>
           <p class="muted small">${standalone ? 'HELIOS is running as an installed app.' : 'Install HELIOS so it opens like a native app and keeps working with no connection.'} Offline cache: <b>${swOn ? 'active' : 'not active yet (reload once)'}</b>.</p>
           ${installEvt ? '<button class="btn primary" data-action="install">Install HELIOS</button>' : standalone ? '' : '<p class="muted small">If no install button appears, use your browser menu → “Install app” / “Add to Home Screen”.</p>'}</div>
+      </div>
+      <div class="card">
+        <h3>🔒 ${T('Privacy lock')}</h3>
+        ${H.vault.enabled()
+          ? `<p class="small">${T('On')} — your record is stored only as AES-256-GCM ciphertext. Auto-lock after
+              <select class="input inline" data-change="autolock" aria-label="Auto-lock minutes">${[2, 5, 10, 30, 60].map((m) => `<option value="${m}" ${(p.autoLockMin || 10) === m ? 'selected' : ''}>${m} min</option>`).join('')}</select> idle.</p>
+            <div class="btns"><button class="btn" data-action="lock-now">Lock now</button><button class="btn" data-action="pin-change">Change PIN</button><button class="btn ghost" data-action="pin-off">Turn off</button></div>`
+          : `<p class="muted small">Encrypt your health record on this device with a PIN. Without the PIN the data cannot be read — <b>if you forget it, the data is lost</b> (keep an exported backup). A short PIN stops casual access, not a determined attacker with your device.</p>
+            <button class="btn primary" data-action="pin-on">Set a PIN</button>`}
+        ${ui.pinForm ? `<form id="pin-form" class="pin-form"><input name="pin" type="password" inputmode="numeric" minlength="4" maxlength="32" placeholder="New PIN (4+ digits)" required aria-label="New PIN"><input name="pin2" type="password" inputmode="numeric" minlength="4" maxlength="32" placeholder="Repeat PIN" required aria-label="Repeat PIN"><button class="btn primary" type="submit">Save PIN</button></form>` : ''}
       </div>
       <form id="sync-form" class="card form">
         <h3>⇅ ${T('Sync')} · end-to-end encrypted</h3>
@@ -156,6 +168,24 @@ window.H = window.H || {};
     catch (e) { app.toast(`Sync failed: ${e.message}`); }
   });
   H.bus.on('boot', applyPrefs);
+
+  // ---------- privacy lock ----------
+  H.bus.on('action:pin-on', () => { ui.pinForm = true; app.render(); });
+  H.bus.on('action:pin-change', () => { ui.pinForm = true; app.render(); });
+  H.bus.on('submit:pin-form', async (f) => {
+    const fd = new FormData(f), pin = String(fd.get('pin')), pin2 = String(fd.get('pin2'));
+    if (pin.length < 4) { app.toast('Use at least 4 digits.'); return; }
+    if (pin !== pin2) { app.toast('The PINs do not match.'); return; }
+    await H.vault.enable(pin, store);
+    ui.pinForm = false; app.log('Privacy lock turned on', 'privacy'); app.armAutoLock();
+    app.toast('Encrypted. The plain-text copy was removed from this device.'); app.render();
+  });
+  H.bus.on('action:pin-off', async () => {
+    if (!window.confirm('Turn off the privacy lock? Your record will be stored unencrypted on this device.')) return;
+    await H.vault.disable(store); app.log('Privacy lock turned off', 'privacy'); app.render();
+  });
+  H.bus.on('action:lock-now', async () => { await H.vault.flush(); H.vault.lock(); location.reload(); });
+  H.bus.on('change:autolock', (el) => { prefs().autoLockMin = +el.value; app.save(); app.armAutoLock(); });
 
   H.sync = { merge, channel, command };
 });

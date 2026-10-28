@@ -36,6 +36,7 @@ window.H = window.H || {};
     const add = (date, id, v) => { const d = (agg[date] = agg[date] || {}); const a = (d[id] = d[id] || [0, 0]); a[0] += v; a[1]++; };
     const reader = file.stream().getReader(), dec = new TextDecoder();
     let buf = '', read = 0, records = 0;
+    const sleepBy = {};
     for (;;) {
       const { done, value } = await reader.read();
       if (value) { buf += dec.decode(value, { stream: true }); read += value.length; }
@@ -54,7 +55,8 @@ window.H = window.H || {};
             const val = attr(tag, 'value') || '';
             if (!/Asleep/.test(val)) continue;      // skip InBed / Awake
             const h = (Date.parse(end.replace(' ', 'T').replace(' ', '')) - Date.parse(start.replace(' ', 'T').replace(' ', ''))) / 3.6e6;
-            if (h > 0 && h < 16) add(end.slice(0, 10), 'sleep', h);
+            // Watch and phone both record sleep: total per source, then keep the larger source.
+            if (h > 0 && h < 16) { const k = end.slice(0, 10), src = attr(tag, 'sourceName') || '?'; const n = (sleepBy[k] = sleepBy[k] || {}); n[src] = (n[src] || 0) + h; }
           } else {
             const v = parseFloat(attr(tag, 'value'));
             if (Number.isFinite(v)) add(start.slice(0, 10), map.id, map.conv(v, attr(tag, 'unit')));
@@ -65,6 +67,7 @@ window.H = window.H || {};
       onProgress(read / file.size, records);
       if (done) break;
     }
+    Object.entries(sleepBy).forEach(([d, bySrc]) => add(d, 'sleep', Math.max(...Object.values(bySrc))));
     return finish(agg, records);
   }
 
@@ -116,14 +119,23 @@ window.H = window.H || {};
     sleff: [['pct', '%', (v) => v], ['frac', '0–1', (v) => v * 100]],
   };
 
-  function parseDate(s) {
+  // order: 'mdy' (US) or 'dmy' for slash dates; ISO dates are unambiguous.
+  function parseDate(s, order = 'mdy') {
     s = String(s || '').trim();
+    const ok = (y, mo, d) => (mo >= 1 && mo <= 12 && d >= 1 && d <= 31 ? `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}` : null);
     let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
-    if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+    if (m) return ok(m[1], +m[2], +m[3]);
     m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/);
-    if (m) return `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;   // US month/day
-    const t = Date.parse(s);
-    return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : null;
+    if (m) return order === 'dmy' ? ok(m[3], +m[2], +m[1]) : ok(m[3], +m[1], +m[2]);
+    const t = new Date(s);
+    if (Number.isNaN(t.getTime())) return null;
+    return ok(t.getFullYear(), t.getMonth() + 1, t.getDate());   // local calendar day, no UTC shift
+  }
+  // Slash dates: if any first part is > 12 the file must be day-first.
+  function detectOrder(values) {
+    let dmy = 0, mdy = 0;
+    values.forEach((v) => { const m = String(v).trim().match(/^(\d{1,2})[/.-](\d{1,2})[/.-]\d{4}/); if (m) { if (+m[1] > 12) dmy++; if (+m[2] > 12) mdy++; } });
+    return dmy > mdy ? 'dmy' : 'mdy';
   }
 
   function guessUnit(id, values) {
@@ -152,13 +164,14 @@ window.H = window.H || {};
         map[id] = { col, unit: guessUnit(id, rows.slice(1, 60).map((r) => parseFloat(r[col]))) };
       }
     });
-    return { name, head, rows: rows.slice(1), dateCol, map };
+    const body = rows.slice(1);
+    return { name, head, rows: body, dateCol, map, order: dateCol >= 0 ? detectOrder(body.slice(0, 200).map((r) => r[dateCol])) : 'mdy' };
   }
 
   function importCsvMapped() {
     const c = ui.csv, agg = {};
     c.rows.forEach((r) => {
-      const date = parseDate(r[c.dateCol]);
+      const date = parseDate(r[c.dateCol], c.order);
       if (!date) return;
       Object.entries(c.map).forEach(([id, { col, unit }]) => {
         if (col < 0) return;
@@ -225,12 +238,13 @@ window.H = window.H || {};
     return `<div class="card">
       <h3>Match columns · ${esc(c.name)} <span class="muted small">(${c.rows.length} rows)</span></h3>
       <div class="map-grid">
-        <div class="field"><label>Date column</label><select class="input" data-change="wear-datecol">${c.head.map((h, i) => `<option value="${i}" ${c.dateCol === i ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></div>
+        <div class="field"><label for="wm-date">Date column</label><select id="wm-date" class="input" data-change="wear-datecol">${c.dateCol < 0 ? '<option value="-1" selected>— choose —</option>' : ''}${c.head.map((h, i) => `<option value="${i}" ${c.dateCol === i ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></div>
+        <div class="field"><label for="wm-order">Date format</label><select id="wm-order" class="input" data-change="wear-order"><option value="mdy" ${c.order !== 'dmy' ? 'selected' : ''}>Month/Day/Year</option><option value="dmy" ${c.order === 'dmy' ? 'selected' : ''}>Day/Month/Year</option></select></div>
         ${H.LOGGABLE.filter((id) => SYN[id]).map((id) => {
           const m = c.map[id] || { col: -1 };
-          return `<div class="field ${m.col >= 0 ? 'matched' : ''}"><label>${esc(label(id))}</label><div class="map-row">
-            <select class="input" data-change="wear-col" data-id="${id}">${opts(m.col)}</select>
-            ${UNITS[id] ? `<select class="input unit" data-change="wear-unit" data-id="${id}">${UNITS[id].map((u) => `<option value="${u[0]}" ${m.unit === u[0] ? 'selected' : ''}>${u[1]}</option>`).join('')}</select>` : ''}
+          return `<div class="field ${m.col >= 0 ? 'matched' : ''}"><label for="wm-${id}">${esc(label(id))}</label><div class="map-row">
+            <select id="wm-${id}" class="input" data-change="wear-col" data-id="${id}">${opts(m.col)}</select>
+            ${UNITS[id] ? `<select class="input unit" data-change="wear-unit" data-id="${id}" aria-label="${esc(label(id))} unit">${UNITS[id].map((u) => `<option value="${u[0]}" ${m.unit === u[0] ? 'selected' : ''}>${u[1]}</option>`).join('')}</select>` : ''}
           </div></div>`;
         }).join('')}
       </div>
@@ -257,7 +271,8 @@ window.H = window.H || {};
     if (f.size > 50e6) { app.toast('CSV is larger than 50 MB.'); return; }
     f.text().then((t) => { try { ui.csv = prepareCsv(f.name, t); } catch (e) { app.toast(e.message); } app.render(); });
   });
-  H.bus.on('change:wear-datecol', (el) => { ui.csv.dateCol = +el.value; });
+  H.bus.on('change:wear-datecol', (el) => { ui.csv.dateCol = +el.value; ui.csv.order = detectOrder(ui.csv.rows.slice(0, 200).map((r) => r[ui.csv.dateCol])); app.render(); });
+  H.bus.on('change:wear-order', (el) => { ui.csv.order = el.value === 'dmy' ? 'dmy' : 'mdy'; });
   H.bus.on('change:wear-col', (el) => {
     const id = el.dataset.id, col = +el.value;
     ui.csv.map[id] = { col, unit: guessUnit(id, ui.csv.rows.slice(0, 60).map((r) => parseFloat(r[col]))) };
@@ -273,5 +288,5 @@ window.H = window.H || {};
   });
   H.bus.on('slot:profile-bottom', () => `<div class="card"><h3>${ICON.import || ''} ${T('Import from wearables')}</h3><p class="muted small">Apple Health, Fitbit, Garmin, Oura, Whoop or any CSV.</p><button class="btn sm primary" data-action="nav" data-view="import">${T('Open importer')}</button></div>`);
 
-  H.wearables = { parseCsv, prepareCsv, parseDate, guessUnit, finish, parseApple, APPLE };
+  H.wearables = { parseCsv, prepareCsv, parseDate, detectOrder, guessUnit, finish, parseApple, APPLE };
 });

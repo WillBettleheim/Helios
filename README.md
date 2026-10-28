@@ -40,6 +40,29 @@ Across the app:
 - **Command palette:** press ⌘K, Ctrl+K or `/` to jump to any view, indicator, protocol or crew member, or run an action.
 - **Sleep-period display** (moon icon): a red-shifted, low-blue-light theme.
 
+## Personalization: HELIOS adapts to you
+
+Open **My profile** (or click **Make it mine** on the dashboard) to create your own profile. HELIOS
+then judges every reading against *your* normal instead of a population average. The demo crew stay
+available in the crew menu.
+
+- **Your data in.** Log readings in the daily check-in (sleep, resting HR, HRV, blood pressure,
+  temperature, exercise, mood, stress, symptoms) and take the alertness test. You can also import a
+  CSV with a `date` column plus any indicator IDs (`rhr`, `hrv`, `sbp`, `sleep`, `pvt`, …). The
+  profile page has a template.
+- **Preflight baseline.** CSV rows dated before your mission start, or values typed in during
+  setup, become your preflight baseline.
+- **Learns, then adapts.** Without preflight data, HELIOS calibrates from your first 7 readings.
+  After that the baseline adapts slowly: a 30-day half-life over readings more than 14 days old,
+  skipping outliers. The 14-day lag means a developing problem doesn't quietly become your new normal.
+- **Realistic spread.** Your spread is blended with the population reference (4 pseudo-readings),
+  so a handful of readings can't produce an unrealistically tight band.
+- **"This is normal for me."** Re-baselines one indicator on your last 14 days (logged, and
+  reversible).
+- **Alert sensitivity.** Choose Sensitive (1.5 / 2.5 SD), Standard (2 / 3) or Conservative (2.5 / 3.5).
+- **Private by design.** Everything stays in this browser. You can export a backup, restore it, or
+  delete your profile and data.
+
 ## Health domains and indicators
 
 - **Cardiovascular**: resting HR, HRV (RMSSD), systolic BP

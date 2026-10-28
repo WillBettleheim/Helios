@@ -148,32 +148,34 @@ window.H = window.H || {};
     const swOn = !!(navigator.serviceWorker && navigator.serviceWorker.controller);
     return `<div class="page-head"><div><p class="eyebrow">${T('Settings')}</p><h1>${T('Settings')}</h1></div></div>
       <div class="grid-2">
-        <div class="card"><h3>${T('Language')}</h3>
+        <div class="card"><h2 class="ct">${T('Language')}</h2>
           <div class="choice">${H.LANGS.map(([k, n]) => `<label><input type="radio" name="lang" value="${k}" data-change="set-lang" ${H.getLang() === k ? 'checked' : ''}><span>${n}</span></label>`).join('')}</div>
           <p class="muted small">Navigation, headings and common controls are translated; detailed medical text is still English.</p></div>
-        <div class="card"><h3>${T('Guided tour')}</h3><p class="muted small">${T('A one-minute walk through the dashboard.')}</p><button class="btn" data-action="tour-start">${T('Take the tour')}</button></div>
-        <div class="card"><h3>${T('Glove mode')}</h3>
+        <div class="card"><h2 class="ct">${T('Display')}</h2>
+          <div class="choice" role="radiogroup" aria-label="Theme">${[['dark', 'Dark'], ['day', 'Day (bright cabin)'], ['night', 'Sleep (red, low blue light)'], ['system', 'Follow system']].map(([k, n]) => `<label><input type="radio" name="theme" value="${k}" data-change="theme" ${H.theme.get() === k ? 'checked' : ''}><span>${T(n)}</span></label>`).join('')}</div></div>
+        <div class="card"><h2 class="ct">${T('Guided tour')}</h2><p class="muted small">${T('A one-minute walk through the dashboard.')}</p><button class="btn" data-action="tour-start">${T('Take the tour')}</button></div>
+        <div class="card"><h2 class="ct">${T('Glove mode')}</h2>
           <label class="switch"><input type="checkbox" data-change="glove" ${p.glove ? 'checked' : ''}><span></span>${T('Larger touch targets and text for use with gloves or in turbulence')}</label></div>
-        <div class="card"><h3>🎙 ${T('Voice control')}</h3>
+        <div class="card"><h2 class="ct">🎙 ${T('Voice control')}</h2>
           <p class="muted small">Say “open trends”, “start check-in”, “briefing”, “night mode” or “triage”. Uses the browser's speech recognition, which in Chrome is processed online — it won't work without a connection.</p>
           <button class="btn ${listening ? 'on' : 'primary'}" data-action="voice-toggle" ${SR ? '' : 'disabled'}>${listening ? 'Stop listening' : SR ? 'Start listening' : 'Not supported in this browser'}</button>
           ${lastHeard ? `<p class="small">Last heard: “${esc(lastHeard)}”</p>` : ''}</div>
-        <div class="card"><h3>⤓ ${T('Install app')}</h3>
+        <div class="card"><h2 class="ct">⤓ ${T('Install app')}</h2>
           <p class="muted small">${standalone ? 'HELIOS is running as an installed app.' : 'Install HELIOS so it opens like a native app and keeps working with no connection.'} Offline cache: <b>${swOn ? 'active' : 'not active yet (reload once)'}</b>.</p>
           ${installEvt ? '<button class="btn primary" data-action="install">Install HELIOS</button>' : standalone ? '' : '<p class="muted small">If no install button appears, use your browser menu → “Install app” / “Add to Home Screen”.</p>'}</div>
       </div>
       <div class="card">
-        <h3>🔒 ${T('Privacy lock')}</h3>
+        <h2 class="ct">🔒 ${T('Privacy lock')}</h2>
         ${H.vault.enabled()
           ? `<p class="small">${T('On')} — your record is stored only as AES-256-GCM ciphertext. Auto-lock after
               <select class="input inline" data-change="autolock" aria-label="Auto-lock minutes">${[2, 5, 10, 30, 60].map((m) => `<option value="${m}" ${(p.autoLockMin || 10) === m ? 'selected' : ''}>${m} min</option>`).join('')}</select> idle.</p>
             <div class="btns"><button class="btn" data-action="lock-now">Lock now</button><button class="btn" data-action="pin-change">Change PIN</button><button class="btn ghost" data-action="pin-off">Turn off</button></div>`
-          : `<p class="muted small">Encrypt your health record on this device with a PIN. Without the PIN the data cannot be read — <b>if you forget it, the data is lost</b> (keep an exported backup). A short PIN stops casual access, not a determined attacker with your device.</p>
+          : `<p class="muted small">Encrypt your health record on this device with a PIN or passphrase. Without the PIN the data cannot be read — <b>if you forget it, the data is lost</b> (keep an exported backup). A short PIN stops casual access, not a determined attacker with your device.</p>
             <button class="btn primary" data-action="pin-on">Set a PIN</button>`}
-        ${ui.pinForm ? `<form id="pin-form" class="pin-form"><input name="pin" type="password" inputmode="numeric" minlength="4" maxlength="32" placeholder="New PIN (4+ digits)" required aria-label="New PIN"><input name="pin2" type="password" inputmode="numeric" minlength="4" maxlength="32" placeholder="Repeat PIN" required aria-label="Repeat PIN"><button class="btn primary" type="submit">Save PIN</button></form>` : ''}
+        ${ui.pinForm ? `<form id="pin-form" class="pin-form"><input name="pin" type="password" minlength="4" maxlength="128" placeholder="New PIN or passphrase" required aria-label="New PIN or passphrase" aria-describedby="pin-strength" data-change="pin-strength" autocomplete="new-password"><input name="pin2" type="password" minlength="4" maxlength="128" placeholder="Repeat" required aria-label="Repeat PIN or passphrase" autocomplete="new-password"><button class="btn primary" type="submit">Save</button><p id="pin-strength" class="small muted" aria-live="polite">A 4–6 digit PIN stops casual access; a passphrase of 12+ characters resists offline guessing.</p></form>` : ''}
       </div>
       <form id="sync-form" class="card form">
-        <h3>⇅ ${T('Sync')} · end-to-end encrypted</h3>
+        <h2 class="ct">⇅ ${T('Sync')} · end-to-end encrypted</h2>
         <p class="muted small">Keeps your record in step across your own devices and shares the crew medical-kit inventory. Each bundle is encrypted on this device with AES-256-GCM (key from the crew passphrase via PBKDF2); the server only sees ciphertext and a slow-hashed channel id. Crewmates' records are never merged into yours. Run <code>node tools/sync-server.js</code> for a local server.</p>
         <div class="vitals">
           <div class="field"><label for="sy-url">Server</label><input id="sy-url" name="url" type="text" value="${esc(s.url)}"></div>
@@ -187,6 +189,7 @@ window.H = window.H || {};
   }
 
   H.bus.on('change:set-lang', (el) => { H.setLang(el.value); app.render(); });
+  H.bus.on('change:theme', (el) => { H.theme.set(el.value); app.render(); });
   H.bus.on('change:glove', (el) => { prefs().glove = el.checked; applyPrefs(); app.save(); app.render(); });
   H.bus.on('action:voice-toggle', () => (listening ? stopVoice() : startVoice()));
   H.bus.on('action:install', async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; app.render(); });
@@ -214,11 +217,22 @@ window.H = window.H || {};
   H.bus.on('boot', applyPrefs);
 
   // ---------- privacy lock ----------
+  // Rough strength guide: entropy from length and character variety.
+  function strength(p) {
+    const pool = (/[a-z]/.test(p) ? 26 : 0) + (/[A-Z]/.test(p) ? 26 : 0) + (/\d/.test(p) ? 10 : 0) + (/[^a-zA-Z\d]/.test(p) ? 33 : 0);
+    const bits = p.length * Math.log2(Math.max(pool, 1));
+    return bits < 28 ? ['Weak — stops casual access only', 'action'] : bits < 60 ? ['Fair — slows a determined attacker', 'monitor'] : ['Strong passphrase', 'nominal'];
+  }
+  document.addEventListener('input', (e) => {
+    if (!e.target.matches || !e.target.matches('[data-change="pin-strength"]')) return;
+    const out = document.getElementById('pin-strength'), [t, lvl] = strength(e.target.value);
+    if (out) { out.textContent = e.target.value ? t : ''; out.className = `small t-${lvl}`; }
+  });
   H.bus.on('action:pin-on', () => { ui.pinForm = true; app.render(); });
   H.bus.on('action:pin-change', () => { ui.pinForm = true; app.render(); });
   H.bus.on('submit:pin-form', async (f) => {
     const fd = new FormData(f), pin = String(fd.get('pin')), pin2 = String(fd.get('pin2'));
-    if (pin.length < 4) { app.toast('Use at least 4 digits.'); return; }
+    if (pin.length < 4) { app.toast('Use at least 4 characters.'); return; }
     if (pin !== pin2) { app.toast('The PINs do not match.'); return; }
     await H.vault.enable(pin, store);
     ui.pinForm = false; app.log('Privacy lock turned on', 'privacy'); app.armAutoLock();

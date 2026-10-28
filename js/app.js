@@ -4,7 +4,19 @@
 (function (H) {
   'use strict';
 
-  const M = H.MISSION;
+  // Mission context for whoever is selected: the demo mission, or the person's own profile.
+  const M = new Proxy(H.MISSION, {
+    get(t, k) {
+      const p = store.profile;
+      if (p && ui.crewId === 'me') {
+        if (k === 'day') return H.personalDay(p);
+        if (k === 'plannedDays') return p.plannedDays;
+        if (k === 'name') return p.mission || 'My mission';
+        if (k === 'startISO') return p.start;
+      }
+      return t[k];
+    },
+  });
   const STORE_KEY = 'helios.v1';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -19,6 +31,8 @@
     pvt: P('<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>'),
     protocols: P('<path d="M4 4h11a3 3 0 013 3v13H7a3 3 0 01-3-3z"/><path d="M8 9h6M8 13h6"/>'),
     report: P('<path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/>'),
+    profile: P('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0116 0"/><path d="M18.5 4.5l1 1 2-2"/>'),
+    upload: P('<path d="M12 16V4"/><path d="M8 8l4-4 4 4"/><path d="M5 20h14"/>'),
     validation: P('<path d="M9 3h6M10 3v6l-5 9a2 2 0 001.8 3h10.4a2 2 0 001.8-3l-5-9V3"/><path d="M7.5 14h9"/>'),
     crew: P('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0113 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.5a5 5 0 016 5"/>'),
     heart: P('<path d="M12 20s-7-4.4-7-10a4 4 0 017-2.6A4 4 0 0119 10c0 5.6-7 10-7 10z"/><path d="M7 12h3l1.5-2.5 2 4 1.5-1.5H17"/>'),
@@ -47,6 +61,7 @@
     { id: 'report', label: 'Downlink report', short: 'Report' },
     { id: 'crew', label: 'Crew (CMO)', short: 'Crew' },
     { id: 'validation', label: 'Model validation', short: 'Validate' },
+    { id: 'profile', label: 'My profile', short: 'Profile' },
   ];
 
   const SYMPTOMS = [
@@ -66,17 +81,38 @@
   const store = loadStore();
   function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (e) { /* ignore */ } }
 
-  const ui = { crewId: 'nakamura', view: 'overview', domain: 'behav', ind: 'sleep', range: 60, protocol: 'P-SLP-01', checkinDone: false, vrun: 'final', vmethod: 'ensemble' };
+  const ui = { crewId: store.profile ? 'me' : 'nakamura', view: 'overview', domain: 'behav', ind: 'sleep', range: 60, protocol: 'P-SLP-01', checkinDone: false, vrun: 'final', vmethod: 'ensemble' };
   let ds, A;
 
-  const todayCheckin = (id) => ((store.checkins[id] || {})[M.day]) || null;
+  const dayFor = (id) => (id === 'me' && store.profile ? H.personalDay(store.profile) : H.MISSION.day);
+  const todayCheckin = (id) => ((store.checkins[id] || {})[dayFor(id)]) || null;
   const pvtTests = (id) => store.pvt[id] || [];
   const me = () => A[ui.crewId];
+  const dayDate = (d) => H.dayToDate(d, M.startISO);
+  const initials = (n) => n.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || 'ME';
+
+  // The person's own profile, shown as a crew member with id "me".
+  function meCrew() {
+    const p = store.profile;
+    if (!p) return null;
+    return { id: 'me', name: p.name, first: p.name.split(/\s+/)[0], role: p.role || 'Astronaut', initials: initials(p.name), priorDose: +p.priorDose || 0, self: true, personal: true };
+  }
+  function crewList() {
+    const m = meCrew();
+    return m ? [m].concat(H.CREW.map((c) => Object.assign({}, c, { self: false }))) : H.CREW;
+  }
 
   function recompute() {
     ds = H.buildDataset(store);
     A = {};
-    H.CREW.forEach((c) => { A[c.id] = H.assessCrew(c, ds, todayCheckin(c.id)); });
+    crewList().forEach((c) => {
+      if (!c.personal) { A[c.id] = H.assessCrew(c, ds, todayCheckin(c.id)); return; }
+      const p = store.profile, cd = H.buildPersonal(p, store);
+      ds.crew.me = cd;
+      const sens = H.SENSITIVITY[p.sensitivity] || H.SENSITIVITY.standard;
+      A.me = H.assessCrew(c, ds, todayCheckin('me'), { day: cd.day, bases: H.personalBaselines(p, cd), zMon: sens.zMon, zAct: sens.zAct, plannedDays: p.plannedDays });
+    });
+    if (!A[ui.crewId]) ui.crewId = crewList()[0].id;
   }
 
   function log(text, kind) {
@@ -135,7 +171,7 @@
         <label class="crew-select">
           <span class="avatar">${c.initials}</span>
           <span class="sr-only">Crew member</span>
-          <select data-change="crew">${H.CREW.map((x) => `<option value="${x.id}" ${x.id === ui.crewId ? 'selected' : ''}>${esc(x.name)}${x.self ? ' (you)' : ''} — ${x.role}</option>`).join('')}</select>
+          <select data-change="crew">${crewList().map((x) => `<option value="${x.id}" ${x.id === ui.crewId ? 'selected' : ''}>${esc(x.name)}${x.self ? ' (you)' : ''} — ${x.role}</option>`).join('')}</select>
         </label>
         <button class="pal-btn" data-action="palette" aria-label="Open command palette">${ICON.search}<span>Search</span><kbd>⌘K</kbd></button>
         <button class="icon-btn" data-action="night" title="Toggle sleep-period display (low blue light)" aria-label="Toggle sleep-period display">${document.body.classList.contains('night') ? ICON.sun : ICON.moon}</button>
@@ -148,7 +184,7 @@
     renderNav();
     renderTopbar();
     const v = $('#view');
-    const views = { overview: vOverview, trends: vTrends, checkin: vCheckin, pvt: vPvt, protocols: vProtocols, report: vReport, crew: vCrew, validation: vValidation };
+    const views = { overview: vOverview, trends: vTrends, checkin: vCheckin, pvt: vPvt, protocols: vProtocols, report: vReport, crew: vCrew, validation: vValidation, profile: vProfile };
     v.innerHTML = (views[ui.view] || vOverview)();
     if (ui.view === 'trends') mountTrendChart();
     animateIn();
@@ -179,7 +215,7 @@
     const pathTo = (t0, t1, n = 40) => Array.from({ length: n + 1 }, (_, i) => bz(t0 + (t1 - t0) * (i / n)).map((v) => v.toFixed(1)).join(',')).join(' ');
     const [sx, sy] = bz(f), [nx, ny] = bz(Math.min(1, f + 0.01));
     const ang = Math.atan2(ny - sy, nx - sx) * 180 / Math.PI;
-    const arrive = H.dayToDate(M.plannedDays).toISOString().slice(0, 10);
+    const arrive = dayDate(M.plannedDays).toISOString().slice(0, 10);
     return `<svg class="traj" viewBox="0 0 1000 175" role="img" aria-label="Mission progress: day ${M.day} of ${M.plannedDays}, Earth to Mars">
       <defs>
         <radialGradient id="g-earth" cx="35%" cy="35%"><stop offset="0" stop-color="#9fd4ff"/><stop offset=".55" stop-color="#2f7fd8"/><stop offset="1" stop-color="#0b2a55"/></radialGradient>
@@ -263,14 +299,15 @@
     const domainCards = a.domains.map((d) => {
       const worst = d.list.slice().sort((x, y) => y.status - x.status)[0];
       const keyInd = worst.status > 0 ? worst : d.list[0];
-      const series = ds.crew[c.id].series[keyInd.ind.id].slice(M.day - 29);
+      const series = ds.crew[c.id].series[keyInd.ind.id].slice(Math.max(0, M.day - 29));
+      const withData = d.list.filter((x) => !x.noData).length;
       return `<button class="domain-card lvl-${lv(d.status)}" data-action="open-domain" data-domain="${d.id}">
         <div class="dc-head"><span class="dc-icon">${ICON[d.icon]}</span><span class="dc-name">${d.name}</span>${pill(d.status)}</div>
         <div class="dc-body">
           <div><div class="dc-k">${keyInd.ind.short}</div><div class="dc-v mono">${H.fmt(keyInd.current, keyInd.ind.dec)}<small> ${keyInd.ind.unit}</small></div></div>
           ${H.charts.spark(series)}
         </div>
-        <div class="dc-note">${worst.status > 0 ? esc(worst.reasons[0]) : `${d.list.length} indicators within range`}</div>
+        <div class="dc-note">${worst.status > 0 ? esc(worst.reasons[0]) : withData ? `${withData} indicator${withData > 1 ? 's' : ''} within range` : 'No data yet — log or import readings'}</div>
       </button>`;
     }).join('');
 
@@ -289,6 +326,7 @@
 
     return `
       ${viewingOther ? `<div class="banner">${ICON.lock}<span>Viewing <b>${esc(c.name)}</b>'s record as Crew Medical Officer. Private behavioral entries are hidden unless shared.</span></div>` : ''}
+      ${!store.profile ? `<div class="banner cta">${ICON.profile}<span><b>This is demo data.</b> Set up your profile and HELIOS will learn your personal baselines from your own readings.</span><button class="btn sm primary" data-action="nav" data-view="profile">Make it mine ${ICON.arrow}</button></div>` : ''}
       <section class="mission-banner">${trajectory()}</section>
       <section class="hero lvl-${lv(a.overall)}">
         ${ring(a.readiness, a.overall)}
@@ -312,6 +350,7 @@
           <div class="insights">${insights}</div>
         </div>
         <aside class="col side">
+          ${c.personal ? adaptCard(a) : ''}
           <div class="card body-card">
             <h3>Body status</h3>
             ${bodyMap(a)}
@@ -403,13 +442,15 @@
         <i class="dot lvl-${lv(x.status)}"></i>
         <span class="ind-name">${i.short}<small>${i.src}</small></span>
         <span class="mono ind-val">${H.fmt(x.current, i.dec)}<small> ${i.unit}</small></span>
-        ${H.charts.spark(seriesOf(i.id).slice(M.day - 29))}
+        ${H.charts.spark(seriesOf(i.id).slice(Math.max(0, (ui.domain === 'env' ? H.MISSION.day : M.day) - 29)))}
       </button>`;
     }).join('');
 
     const slope = r.slopeWeek;
     const stat = (k, v, sub) => `<div class="stat"><span class="k">${k}</span><span class="v mono">${v}</span>${sub ? `<small>${sub}</small>` : ''}</div>`;
-    const baseTxt = ind.base ? `${H.fmt(r.center, ind.dec)} ± ${H.fmt(ind.base[1], ind.dec)}` : '—';
+    const B = r.base, hasB = !!(B && B.mean != null);
+    const baseTxt = hasB ? `${H.fmt(r.center, ind.dec)} ± ${H.fmt(r.sd, ind.dec)}` : B && B.source === 'calibrating' ? `${B.n}/${B.need}` : '—';
+    const personal = me().crew.personal && ui.domain !== 'env';
     const how = ind.cumulative
       ? `Career dose is prior-flight dose plus every daily dosimeter reading. HELIOS projects it to mission end (day ${M.plannedDays}) at your current background rate and compares it with the ${M.careerLimit} mSv career limit.`
       : ind.base && ind.useZ !== false
@@ -430,18 +471,22 @@
           ${r.reasons.length ? `<ul class="reasons">${r.reasons.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
           <div class="stats">
             ${stat('Current', `${H.fmt(r.current, ind.dec)} <small>${ind.unit}</small>`, r.latestDay === M.day ? 'today' : `last reading D${r.latestDay}`)}
-            ${stat(ind.expected ? 'Expected now' : 'Baseline', baseTxt, ind.base ? (ind.expected ? 'in-flight model' : 'preflight mean ± SD') : 'absolute limits')}
+            ${stat(ind.expected ? 'Expected now' : B && B.source === 'calibrating' ? 'Learning' : 'Baseline', baseTxt, B ? (ind.expected ? 'in-flight model' : SOURCE_TEXT[B.source]) : 'absolute limits')}
             ${stat('Deviation', r.z != null ? `${r.z > 0 ? '+' : ''}${r.z.toFixed(1)} SD` : '—', r.z != null ? 'from baseline' : '')}
             ${stat('Trend', slope != null ? `${slope > 0 ? '+' : ''}${H.fmt(slope, ind.dec + (Math.abs(slope) < 1 ? 1 : 0))}` : '—', `${ind.unit} per week`)}
             ${stat(ind.cumulative ? 'Mission end' : 'In 14 days', r.projected != null ? H.fmt(r.projected, ind.dec) : '—', ind.unit)}
             ${stat('Coverage', `${Math.round((r.confidence || 0) * 100)}%`, r.stale ? 'stale — re-measure' : 'last 14 days')}
           </div>
           <div class="chart-head">
-            <span class="legend"><i class="lg-line"></i>Measured${ind.base ? '<i class="lg-band"></i>Your normal range' : ''}<i class="lg-limit"></i>Limits</span>
+            <span class="legend"><i class="lg-line"></i>Measured${hasB ? '<i class="lg-band"></i>Your normal range' : ''}<i class="lg-limit"></i>Limits</span>
             <div class="seg">${[30, 60, 0].map((n) => `<button class="${ui.range === n ? 'active' : ''}" data-action="set-range" data-range="${n}">${n ? n + ' d' : 'Mission'}</button>`).join('')}</div>
           </div>
           <div id="chart"></div>
-          <details class="how"><summary>How HELIOS assesses this</summary><p>${how}</p></details>
+          ${personal && B && !ind.expected && B.source !== 'default' ? `<div class="rebase">
+            <span>${ICON.profile} <b>${SOURCE_LABEL[B.source]}</b> — ${SOURCE_TEXT[B.source]}${B.n ? ` (${B.n} readings)` : ''}.</span>
+            ${B.source === 'rebased' ? `<button class="btn sm" data-action="unrebase" data-ind="${ind.id}">Reset to automatic</button>` : r.current != null && !r.noData ? `<button class="btn sm" data-action="rebase" data-ind="${ind.id}" title="Use your last 14 days as your normal for this indicator">This is normal for me</button>` : ''}
+          </div>` : ''}
+          <details class="how"><summary>How HELIOS assesses this</summary><p>${how}${personal ? ' Your baseline comes from your own data: preflight readings if you have them, otherwise your first 7 readings; after that it adapts slowly using readings more than 14 days old, so a developing problem does not become your new normal.' : ''}</p></details>
         </div>
       </div>`;
   }
@@ -450,7 +495,7 @@
     const el = $('#chart');
     if (!el) return;
     const r = resultFor(ui.ind), ind = r.ind;
-    const d1 = M.day, d0 = ui.range ? Math.max(1, d1 - ui.range + 1) : 1;
+    const d1 = ui.domain === 'env' ? H.MISSION.day : M.day, d0 = ui.range ? Math.max(1, d1 - ui.range + 1) : 1;
     const L = ind.limits || {};
     const sign = ind.bad === 'up' ? 1 : -1;
     const limits = [['monitor', 'Monitor'], ['action', 'Action'], ['urgent', 'Urgent']]
@@ -458,8 +503,8 @@
     if (ind.cumulative) limits.push({ v: M.careerLimit, lvl: 'urgent', label: 'Career limit' });
     H.charts.trend(el, {
       pts: r.pts, d0, d1, unit: ind.unit, dec: ind.dec, label: ind.name, limits, sign,
-      center: ind.base ? (d) => ind.base[0] + (ind.expected ? ind.expected(d) : 0) : null,
-      sd: ind.base ? ind.base[1] : 0, bandK: 2, sparse: ind.cadence > 2,
+      center: r.base && r.base.mean != null ? (d) => r.base.mean + (ind.expected ? ind.expected(d) : 0) : null,
+      sd: r.base ? r.base.sd : 0, dateOf: ui.domain === 'env' ? (d) => H.dayToDate(d) : dayDate, bandK: 2, sparse: ind.cadence > 2,
       events: M.events.filter((e) => ui.domain === 'env' ? e.kind === 'env' : true),
     });
   }
@@ -482,7 +527,9 @@
       <form id="checkin-form" class="card form" autocomplete="off">
         <fieldset>
           <legend>Sleep</legend>
-          <p class="muted small">Your watch logged <b class="mono">${H.fmt(ds.crew[c.id].series.sleep[M.day], 1)} h</b> last sleep period.</p>
+          ${c.personal ? `<div class="vitals">
+            <div class="field"><label for="f-sleep">Hours slept <small>h</small></label><input id="f-sleep" name="sleep" type="number" min="0" max="16" step="0.25" inputmode="decimal" value="${v.vitals.sleep ?? ''}"></div>
+          </div>` : `<p class="muted small">Your watch logged <b class="mono">${H.fmt(ds.crew[c.id].series.sleep[M.day], 1)} h</b> last sleep period.</p>`}
           <div class="field"><span class="label">How rested do you feel?</span>
             <div class="choice" role="radiogroup">${[1, 2, 3, 4, 5].map((n) => `<label><input type="radio" name="sleepQ" value="${n}" ${+v.sleepQ === n ? 'checked' : ''}><span>${['Exhausted', 'Tired', 'OK', 'Rested', 'Fully rested'][n - 1]}</span></label>`).join('')}</div>
           </div>
@@ -500,11 +547,13 @@
           <div class="chips">${SYMPTOMS.map(([id, label]) => `<label class="chip"><input type="checkbox" name="symptoms" value="${id}" ${v.symptoms.includes(id) ? 'checked' : ''}><span>${label}</span></label>`).join('')}</div>
         </fieldset>
         <fieldset>
-          <legend>Manual vitals <span class="muted small">— optional, only if a sensor is unavailable</span></legend>
+          <legend>${c.personal ? 'Your readings <span class="muted small">— optional; every reading helps HELIOS learn your normal</span>' : 'Manual vitals <span class="muted small">— optional, only if a sensor is unavailable</span>'}</legend>
           <div class="vitals">
             <div class="field"><label for="f-rhr">Resting HR <small>bpm</small></label><input id="f-rhr" name="rhr" type="number" min="30" max="200" inputmode="numeric" value="${v.vitals.rhr || ''}" placeholder="${H.fmt(me().inds.rhr.current, 0)}"></div>
             <div class="field"><label for="f-sbp">Systolic BP <small>mmHg</small></label><input id="f-sbp" name="sbp" type="number" min="70" max="250" inputmode="numeric" value="${v.vitals.sbp || ''}" placeholder="${H.fmt(me().inds.sbp.current, 0)}"></div>
             <div class="field"><label for="f-temp">Temperature <small>°C</small></label><input id="f-temp" name="temp" type="number" min="34" max="42" step="0.1" inputmode="decimal" value="${v.vitals.temp || ''}" placeholder="${H.fmt(me().inds.temp.current, 1)}"></div>
+            ${c.personal ? `<div class="field"><label for="f-hrv">HRV (RMSSD) <small>ms</small></label><input id="f-hrv" name="hrv" type="number" min="5" max="250" inputmode="numeric" value="${v.vitals.hrv ?? ''}"></div>
+            <div class="field"><label for="f-exer">Exercise <small>min</small></label><input id="f-exer" name="exer" type="number" min="0" max="600" inputmode="numeric" value="${v.vitals.exer ?? ''}"></div>` : ''}
           </div>
         </fieldset>
         <fieldset>
@@ -528,7 +577,7 @@
     const prev = { readiness: before.readiness, ids: before.insights.map((i) => i.id) };
     const entry = {
       sleepQ: +fd.get('sleepQ') || 3, mood: num('mood'), energy: num('energy'), stress: num('stress'),
-      symptoms: fd.getAll('symptoms'), vitals: { rhr: num('rhr'), sbp: num('sbp'), temp: num('temp') },
+      symptoms: fd.getAll('symptoms'), vitals: { rhr: num('rhr'), sbp: num('sbp'), temp: num('temp'), sleep: num('sleep'), hrv: num('hrv'), exer: num('exer') },
       notes: String(fd.get('notes') || '').slice(0, 1000), share: fd.get('share'), t: Date.now(),
     };
     (store.checkins[ui.crewId] = store.checkins[ui.crewId] || {})[M.day] = entry;
@@ -574,7 +623,7 @@
   const PVT_TIMEOUT = 3000, PVT_LAPSE = 355;
 
   function vPvt() {
-    const base = H.INDICATORS.find((i) => i.id === 'pvt').base;
+    const PB = me().inds.pvt.base;
     const hist = pvtTests(ui.crewId).slice(-5).reverse();
     return `
       <div class="page-head"><div><p class="eyebrow">Cognition · PVT-B</p><h1>Alertness test</h1>
@@ -590,7 +639,7 @@
         <aside class="card">
           <h3>Your reference</h3>
           <ul class="kv">
-            <li><span>Preflight baseline</span><span class="mono">${base[0]} ± ${base[1]} ms</span></li>
+            <li><span>${PB && PB.mean != null ? SOURCE_LABEL[PB.source] : 'Your baseline'}</span><span class="mono">${PB && PB.mean != null ? `${Math.round(PB.mean)} ± ${Math.round(PB.sd)} ms` : `learning ${PB ? PB.n : 0}/7 tests`}</span></li>
             <li><span>Lapse threshold</span><span class="mono">&gt; ${PVT_LAPSE} ms</span></li>
           </ul>
           <h3>Recent tests</h3>
@@ -694,12 +743,11 @@
 
   function pvtResultHtml() {
     const r = pvt.result, a = me(), st = a.inds.pvt;
-    const base = st.ind.base;
-    const z = (r.mean - base[0]) / base[1];
+    const z = st.base && st.base.mean != null ? (r.mean - st.base.mean) / st.base.sd : null;
     return `<div class="pvt-msg result">
       ${pill(st.status)}
       <div class="pvt-big mono">${r.mean}<small> ms</small></div>
-      <span>${z <= 1 ? 'In line with your baseline.' : `${z.toFixed(1)} SD slower than your baseline.`} ${r.lapses} lapse${r.lapses === 1 ? '' : 's'} · ${r.falseStarts} early · median ${r.median} ms · ${r.n} trials</span>
+      <span>${z == null ? `HELIOS is still learning your baseline (${st.base ? st.base.n : 0}/7 tests).` : z <= 1 ? 'In line with your baseline.' : `${z.toFixed(1)} SD slower than your baseline.`} ${r.lapses} lapse${r.lapses === 1 ? '' : 's'} · ${r.falseStarts} early · median ${r.median} ms · ${r.n} trials</span>
       <div class="btns"><button class="btn" data-action="pvt-start">Retake</button><button class="btn primary" data-action="nav" data-view="overview">See my health</button></div>
     </div>`;
   }
@@ -767,7 +815,7 @@
       <div class="card report">
         <div class="report-head">
           <div><span class="k">Crew member</span><b>${esc(c.name)}</b><small>${esc(c.role)}</small></div>
-          <div><span class="k">Mission</span><b>${M.name}</b><small>Day ${M.day} · ${H.dayToDate(M.day).toISOString().slice(0, 10)}</small></div>
+          <div><span class="k">Mission</span><b>${M.name}</b><small>Day ${M.day} · ${dayDate(M.day).toISOString().slice(0, 10)}</small></div>
           <div><span class="k">Readiness</span><b class="t-${lv(a.overall)}">${a.readiness} / 100</b><small>${H.LEVEL_LABEL[a.overall]}</small></div>
         </div>
         <div class="table-wrap"><table class="table">
@@ -788,7 +836,7 @@
 
   // ---------- crew ----------
   function vCrew() {
-    const rows = H.CREW.map((c) => {
+    const rows = crewList().map((c) => {
       const a = A[c.id], ci = todayCheckin(c.id);
       const privateBehav = ci && ci.share === 'private';
       return `<tr>
@@ -809,7 +857,7 @@
         <div class="legend-row">${[0, 1, 2, 3].map((l) => `<span><i class="dot lvl-${lv(l)}"></i>${H.LEVEL_LABEL[l]}</span>`).join('')}</div>
       </div>
       <h2 class="section-title">Crew findings</h2>
-      <div class="crew-findings">${H.CREW.map((c) => A[c.id].insights.filter((i) => !i.private).map((i) => `<button class="cf lvl-${lv(i.level)}" data-action="set-crew" data-id="${c.id}">${pill(i.level)}<span><b>${esc(c.name)}</b> — ${esc(i.title)}</span>${ICON.arrow}</button>`).join('')).join('')}</div>`;
+      <div class="crew-findings">${crewList().map((c) => A[c.id].insights.filter((i) => !i.private).map((i) => `<button class="cf lvl-${lv(i.level)}" data-action="set-crew" data-id="${c.id}">${pill(i.level)}<span><b>${esc(c.name)}</b> — ${esc(i.title)}</span>${ICON.arrow}</button>`).join('')).join('')}</div>`;
   }
 
   // ---------- validation on real data ----------
@@ -945,6 +993,176 @@
       </div>`;
   }
 
+  // ---------- personal profile ----------
+  const SOURCE_LABEL = { preflight: 'Preflight baseline', learned: 'Learned baseline', adaptive: 'Adaptive baseline', rebased: 'Your chosen normal', calibrating: 'Calibrating', default: 'Population default' };
+  const SOURCE_TEXT = {
+    preflight: 'from your readings before mission start', learned: 'learned from your first readings', adaptive: 'adapting to you over time',
+    rebased: 'set from 14 days you marked as normal', calibrating: 'needs more readings', default: 'standard reference until HELIOS knows you',
+  };
+  const BASELINE_FIELDS = () => H.INDICATORS.filter((i) => i.base && !i.derived && !i.expected);
+
+  function adaptStats(a) {
+    const c = { preflight: 0, learned: 0, adaptive: 0, rebased: 0, calibrating: 0, default: 0 };
+    BASELINE_FIELDS().forEach((i) => { const b = a.inds[i.id].base; if (b) c[b.source]++; });
+    return c;
+  }
+
+  function adaptCard(a) {
+    const st = adaptStats(a), total = BASELINE_FIELDS().length;
+    const mine = st.preflight + st.learned + st.adaptive + st.rebased;
+    const sens = H.SENSITIVITY[store.profile.sensitivity] || H.SENSITIVITY.standard;
+    return `<div class="card adapt-card">
+      <h3>${ICON.profile} Tuned to you</h3>
+      <div class="adapt-meter"><i style="width:${(mine / total) * 100}%"></i><b style="width:${(st.calibrating / total) * 100}%"></b></div>
+      <p class="small"><b class="mono">${mine}/${total}</b> baselines are personal${st.calibrating ? ` · <b class="mono">${st.calibrating}</b> learning` : ''}.</p>
+      <p class="muted small">Alerts: <b>${sens.label}</b> (${sens.zMon}/${sens.zAct} SD).</p>
+      <button class="link" data-action="nav" data-view="profile">Manage baselines & data ${ICON.arrow}</button>
+    </div>`;
+  }
+
+  function vProfile() {
+    const p = store.profile;
+    if (!p || ui.editProfile) return profileForm(p);
+    const a = A.me, day = H.personalDay(p), st = adaptStats(a);
+    const recs = (store.personal && store.personal.records) || {};
+    const nReadings = Object.values(recs).reduce((s, r) => s + Object.keys(r).length, 0);
+    const nCheck = Object.keys(store.checkins.me || {}).length, nPvt = (store.pvt.me || []).length;
+    const rows = BASELINE_FIELDS().map((ind) => {
+      const r = a.inds[ind.id], B = r.base || { source: 'default' };
+      return `<tr>
+        <td><button class="link-row" data-action="open-ind" data-ind="${ind.id}"><b>${ind.short}</b><small>${ind.unit}</small></button></td>
+        <td><span class="src src-${B.source}">${SOURCE_LABEL[B.source]}</span></td>
+        <td class="mono">${B.mean != null ? `${H.fmt(B.mean, ind.dec)} ± ${H.fmt(B.sd, ind.dec)}` : `${B.n || 0}/${B.need || 7}`}</td>
+        <td class="mono">${r.noData ? '—' : H.fmt(r.current, ind.dec)}</td>
+        <td>${r.noData ? '' : pill(r.status)}</td>
+        <td class="right">${B.source === 'rebased' ? `<button class="btn sm ghost" data-action="unrebase" data-ind="${ind.id}">Reset</button>` : !r.noData && B.source !== 'calibrating' ? `<button class="btn sm ghost" data-action="rebase" data-ind="${ind.id}">Normal for me</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+    return `
+      <div class="page-head"><div class="who">
+        <span class="avatar big">${initials(p.name)}</span>
+        <div><p class="eyebrow">My profile</p><h1>${esc(p.name)}</h1><p class="lede">${esc(p.role || 'Astronaut')} · ${esc(p.mission || 'My mission')} · day ${day} of ${p.plannedDays} · started ${esc(p.start)}</p></div>
+      </div><button class="btn" data-action="edit-profile">Edit profile</button></div>
+
+      <section class="adapt-hero">
+        ${[['preflight', st.preflight], ['learned', st.learned + st.adaptive], ['rebased', st.rebased], ['calibrating', st.calibrating], ['default', st.default]].map(([k, n]) => `<div class="stat"><span class="k">${k === 'learned' ? 'Learned & adaptive' : SOURCE_LABEL[k]}</span><span class="v mono">${n}</span><small>${SOURCE_TEXT[k]}</small></div>`).join('')}
+      </section>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3>Alert sensitivity</h3>
+          <p class="muted small">How far from <em>your</em> normal a reading must be before HELIOS raises Monitor and Action.</p>
+          <div class="sens">${Object.entries(H.SENSITIVITY).map(([k, v]) => `<button class="${(p.sensitivity || 'standard') === k ? 'active' : ''}" data-action="sensitivity" data-k="${k}"><b>${v.label}</b><span class="mono">${v.zMon} / ${v.zAct} SD</span><small>${v.note}</small></button>`).join('')}</div>
+        </div>
+        <div class="card">
+          <h3>${ICON.upload} Your data</h3>
+          <p class="muted small"><b class="mono">${nReadings}</b> imported readings over <b class="mono">${Object.keys(recs).length}</b> days · <b class="mono">${nCheck}</b> check-ins · <b class="mono">${nPvt}</b> alertness tests. Everything stays on this device.</p>
+          <div class="btns">
+            <label class="btn sm primary file-btn">${ICON.upload} Import CSV<input type="file" accept=".csv,text/csv" data-change="import-csv" hidden></label>
+            <button class="btn sm" data-action="csv-template">CSV template</button>
+            <button class="btn sm" data-action="export-me">Export backup</button>
+            <label class="btn sm file-btn">Restore backup<input type="file" accept=".json,application/json" data-change="import-json" hidden></label>
+          </div>
+          <p class="muted small">CSV: one row per day — a <code>date</code> column (YYYY-MM-DD) plus any of ${H.LOGGABLE.map((x) => `<code>${x}</code>`).join(' ')}. Rows dated before your mission start become your preflight baseline.</p>
+        </div>
+      </div>
+
+      <div class="card table-wrap">
+        <h3>Your baselines</h3>
+        <table class="table">
+          <thead><tr><th>Indicator</th><th>Source</th><th>Your normal</th><th>Current</th><th>Status</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <p class="muted small">Preflight readings are used first. Without them HELIOS learns from your first 7 readings, then adapts slowly using readings more than 14 days old (30-day half-life), skipping outliers. The spread is blended with the population reference so a few readings can't make the band unrealistically tight.</p>
+      </div>
+      <div class="danger"><button class="btn sm ghost" data-action="delete-me">Delete my profile and data</button></div>`;
+  }
+
+  function profileForm(p) {
+    const v = p || { name: '', role: 'Flight Engineer', mission: 'My mission', start: new Date().toISOString().slice(0, 10), plannedDays: 180, sensitivity: 'standard', priorDose: 0, baseline: {} };
+    const fields = BASELINE_FIELDS().map((i) => `<div class="field"><label for="b-${i.id}">${i.short} <small>${i.unit}</small></label><input id="b-${i.id}" name="b-${i.id}" type="number" step="any" inputmode="decimal" value="${v.baseline && v.baseline[i.id] != null ? v.baseline[i.id] : ''}" placeholder="${i.base[0]}"></div>`).join('');
+    return `
+      <div class="page-head"><div><p class="eyebrow">${p ? 'Edit profile' : 'Personalize HELIOS'}</p><h1>${p ? 'Your profile' : 'Make HELIOS yours'}</h1>
+        <p class="lede">HELIOS judges every reading against <b>your</b> normal, not a population average. Tell it a little about you — everything is optional except your name, and it never leaves this device.</p></div></div>
+      <form id="profile-form" class="card form" autocomplete="off">
+        <fieldset><legend>About you</legend>
+          <div class="vitals">
+            <div class="field"><label for="p-name">Name</label><input id="p-name" name="name" type="text" required maxlength="60" value="${esc(v.name)}"></div>
+            <div class="field"><label for="p-role">Role</label><input id="p-role" name="role" type="text" maxlength="40" value="${esc(v.role)}"></div>
+            <div class="field"><label for="p-dose">Prior career dose <small>mSv</small></label><input id="p-dose" name="priorDose" type="number" min="0" step="any" value="${v.priorDose || 0}"></div>
+          </div>
+        </fieldset>
+        <fieldset><legend>Mission</legend>
+          <div class="vitals">
+            <div class="field"><label for="p-mission">Mission name</label><input id="p-mission" name="mission" type="text" maxlength="40" value="${esc(v.mission)}"></div>
+            <div class="field"><label for="p-start">Start date</label><input id="p-start" name="start" type="date" required value="${esc(v.start)}"></div>
+            <div class="field"><label for="p-days">Planned duration <small>days</small></label><input id="p-days" name="plannedDays" type="number" min="1" max="3000" required value="${v.plannedDays}"></div>
+          </div>
+        </fieldset>
+        <fieldset><legend>Preflight baselines <span class="muted small">— optional; leave blank and HELIOS learns them from your first week</span></legend>
+          <div class="base-grid">${fields}</div>
+        </fieldset>
+        <fieldset><legend>Alert sensitivity</legend>
+          <div class="choice">${Object.entries(H.SENSITIVITY).map(([k, s]) => `<label><input type="radio" name="sensitivity" value="${k}" ${v.sensitivity === k ? 'checked' : ''}><span><b>${s.label}</b> · ${s.note}</span></label>`).join('')}</div>
+        </fieldset>
+        <div class="form-foot">${p ? '<button type="button" class="btn" data-action="cancel-profile">Cancel</button>' : ''}<button type="submit" class="btn primary">${p ? 'Save profile' : 'Create my profile'} ${ICON.arrow}</button></div>
+      </form>`;
+  }
+
+  function submitProfile(form) {
+    const fd = new FormData(form);
+    const baseline = {};
+    BASELINE_FIELDS().forEach((i) => { const x = parseFloat(fd.get('b-' + i.id)); if (Number.isFinite(x)) baseline[i.id] = x; });
+    const prev = store.profile || {};
+    store.profile = {
+      name: String(fd.get('name')).trim().slice(0, 60) || 'Astronaut', role: String(fd.get('role') || '').trim().slice(0, 40),
+      mission: String(fd.get('mission') || '').trim().slice(0, 40), start: String(fd.get('start')), plannedDays: Math.max(1, parseInt(fd.get('plannedDays'), 10) || 180),
+      priorDose: parseFloat(fd.get('priorDose')) || 0, sensitivity: fd.get('sensitivity') || 'standard', baseline, rebase: prev.rebase || {}, created: prev.created || Date.now(),
+    };
+    store.personal = store.personal || { records: {} };
+    ui.editProfile = false;
+    ui.crewId = 'me';
+    log(prev.name ? 'Profile updated' : 'Profile created — HELIOS is now learning your baselines', 'profile');
+    recompute();
+    go(prev.name ? 'profile' : 'overview');
+    if (!prev.name) toast('Profile created. Add a check-in or import readings so HELIOS can learn your normal.');
+  }
+
+  function importCsv(text) {
+    const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) { toast('That CSV has no data rows.'); return; }
+    const head = lines[0].split(',').map((h) => h.trim().toLowerCase());
+    const di = head.indexOf('date');
+    if (di < 0) { toast('The CSV needs a "date" column.'); return; }
+    const cols = head.map((h, i) => (H.LOGGABLE.includes(h) ? [i, h] : null)).filter(Boolean);
+    if (!cols.length) { toast(`No recognised columns. Use: ${H.LOGGABLE.join(', ')}.`); return; }
+    const recs = (store.personal = store.personal || { records: {} }).records;
+    let n = 0, days = 0, pre = 0;
+    lines.slice(1).forEach((l) => {
+      const cells = l.split(',');
+      const date = (cells[di] || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+      let any = false;
+      cols.forEach(([i, id]) => {
+        const x = parseFloat(cells[i]);
+        if (!Number.isFinite(x)) return;
+        (recs[date] = recs[date] || {})[id] = x; n++; any = true;
+      });
+      if (any) { days++; if (H.dayOf(date, store.profile.start) < 1) pre++; }
+    });
+    log(`Imported ${n} readings over ${days} days`, 'import');
+    recompute(); render();
+    toast(`Imported ${n} readings over ${days} days${pre ? ` (${pre} days before mission start used as preflight baseline)` : ''}.`);
+  }
+
+  function download(name, text, type) {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([text], { type }));
+    link.download = name;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  }
+
   // ---------- command palette ----------
   const palette = { open: false, q: '', i: 0 };
   function commands() {
@@ -953,7 +1171,7 @@
       ui.domain = ind.domain || 'env'; ui.ind = ind.id; go('trends');
     } }));
     H.PROTOCOLS.forEach((p) => list.push({ label: `${p.id} ${p.title}`, hint: 'Protocol', run: () => { ui.protocol = p.id; go('protocols'); } }));
-    H.CREW.forEach((c) => list.push({ label: `Switch to ${c.name}`, hint: c.role, run: () => { ui.crewId = c.id; go('overview'); } }));
+    crewList().forEach((c) => list.push({ label: `Switch to ${c.name}`, hint: c.role, run: () => { ui.crewId = c.id; go('overview'); } }));
     list.push({ label: 'Play voice briefing', hint: 'Action', run: speak });
     list.push({ label: 'Toggle sleep-period display', hint: 'Action', run: () => $('[data-action="night"]').click() });
     list.push({ label: 'Start alertness test', hint: 'Action', run: () => { go('pvt'); pvtStart(); } });
@@ -1079,6 +1297,32 @@
     }
     else if (act === 'print') window.print();
     else if (act === 'brief') speak();
+    else if (act === 'edit-profile') { ui.editProfile = true; render(); }
+    else if (act === 'cancel-profile') { ui.editProfile = false; render(); }
+    else if (act === 'sensitivity') {
+      store.profile.sensitivity = el.dataset.k;
+      log(`Alert sensitivity set to ${H.SENSITIVITY[el.dataset.k].label}`, 'profile');
+      recompute(); render();
+    }
+    else if (act === 'rebase' || act === 'unrebase') {
+      const id = el.dataset.ind, ind = H.INDICATORS.find((i) => i.id === id);
+      store.profile.rebase = store.profile.rebase || {};
+      if (act === 'rebase') { store.profile.rebase[id] = H.personalDay(store.profile); log(`Marked current ${ind.short} as normal`, 'profile'); toast(`${ind.short}: your last 14 days are now your normal.`); }
+      else { delete store.profile.rebase[id]; log(`${ind.short} baseline reset to automatic`, 'profile'); }
+      recompute(); render();
+    }
+    else if (act === 'csv-template') download('helios-readings-template.csv', ['date'].concat(H.LOGGABLE).join(',') + '\n', 'text/csv');
+    else if (act === 'export-me') {
+      const keep = (o) => (o && o.me ? { me: o.me } : {});
+      download(`helios-profile-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ helios: 1, profile: store.profile, personal: store.personal, checkins: keep(store.checkins), pvt: keep(store.pvt), steps: keep(store.steps) }, null, 2), 'application/json');
+    }
+    else if (act === 'delete-me') {
+      if (!window.confirm('Delete your profile, imported readings, check-ins and test results from this device? This cannot be undone.')) return;
+      delete store.profile; delete store.personal;
+      ['checkins', 'pvt', 'steps', 'acks'].forEach((k) => { if (store[k]) delete store[k].me; });
+      store.log = store.log.filter((l) => l.crew !== 'me');
+      ui.crewId = 'nakamura'; save(); recompute(); go('overview'); toast('Your profile and data were deleted.');
+    }
     else if (act === 'palette') openPalette();
     else if (act === 'vrun') { ui.vrun = el.dataset.id; render(); }
     else if (act === 'vmethod') { ui.vmethod = el.dataset.id; render(); }
@@ -1087,6 +1331,23 @@
   document.addEventListener('change', (e) => {
     const el = e.target;
     if (el.dataset.change === 'crew') { ui.crewId = el.value; render(); }
+    else if (el.dataset.change === 'import-csv' || el.dataset.change === 'import-json') {
+      const f = el.files && el.files[0];
+      if (!f) return;
+      if (f.size > 5e6) { toast('That file is too large (5 MB max).'); return; }
+      const kind = el.dataset.change;
+      f.text().then((t) => {
+        if (kind === 'import-csv') { importCsv(t); return; }
+        try {
+          const b = JSON.parse(t);
+          if (!b || b.helios !== 1 || !b.profile) throw new Error('not a HELIOS backup');
+          store.profile = b.profile; store.personal = b.personal || { records: {} };
+          ['checkins', 'pvt', 'steps'].forEach((k) => { if (b[k] && b[k].me) (store[k] = store[k] || {}).me = b[k].me; });
+          ui.crewId = 'me'; log('Profile restored from backup', 'import'); recompute(); render(); toast('Backup restored.');
+        } catch (err) { toast('That file is not a HELIOS backup.'); }
+      });
+      el.value = '';
+    }
     else if (el.dataset.change === 'step') {
       const map = (store.steps[ui.crewId] = store.steps[ui.crewId] || {});
       const set = new Set(map[el.dataset.id] || []);
@@ -1103,6 +1364,7 @@
 
   document.addEventListener('submit', (e) => {
     if (e.target.id === 'checkin-form') { e.preventDefault(); submitCheckin(e.target); }
+    if (e.target.id === 'profile-form') { e.preventDefault(); submitProfile(e.target); }
   });
 
   document.addEventListener('mousedown', (e) => {

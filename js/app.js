@@ -83,15 +83,27 @@
   ];
 
   // ---------- state ----------
+  // Fills in anything an older or damaged record is missing, so a bad save can't break startup.
+  function normalize(s) {
+    const obj = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {});
+    const arr = (x) => (Array.isArray(x) ? x : []);
+    s = obj(s);
+    return Object.assign(s, { v: 1, checkins: obj(s.checkins), pvt: obj(s.pvt), log: arr(s.log), steps: obj(s.steps), acks: obj(s.acks), queue: arr(s.queue) });
+  }
   function loadStore() {
-    try {
-      const s = JSON.parse(localStorage.getItem(STORE_KEY));
-      if (s && s.v === 1) return s;
-    } catch (e) { /* storage unavailable */ }
-    return { v: 1, checkins: {}, pvt: {}, log: [], steps: {}, acks: {}, queue: [] };
+    if (H.vault && H.vault.enabled()) return normalize({});      // filled in after unlock
+    try { return normalize(JSON.parse(localStorage.getItem(STORE_KEY))); } catch (e) { return normalize({}); }
   }
   const store = loadStore();
-  function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (e) { /* ignore */ } }
+  let saveWarned = false;
+  function save() {
+    try {
+      if (H.vault && H.vault.unlocked()) H.vault.save(store);
+      else if (!(H.vault && H.vault.enabled())) localStorage.setItem(STORE_KEY, JSON.stringify(store));
+    } catch (e) {
+      if (!saveWarned) { saveWarned = true; toast('Could not save — device storage is full or blocked. Export a backup from My profile.'); }
+    }
+  }
 
   const ui = { crewId: store.profile ? 'me' : 'nakamura', view: 'overview', domain: 'behav', ind: 'sleep', range: 60, protocol: 'P-SLP-01', checkinDone: false, vrun: 'final', vmethod: 'ensemble' };
   let ds, A;
@@ -181,10 +193,11 @@
     el.hidden = false;
     el.innerHTML = `<div class="sheet" role="dialog" aria-label="${T('All sections')}">
       <div class="sheet-head"><b>${T('All sections')}</b><button class="icon-btn" data-action="close-more" aria-label="Close">✕</button></div>
-      ${NAV_GROUPS.map(([g, label]) => `<div class="sheet-group"><span class="nav-gl">${T(label)}</span><div class="sheet-grid">${NAV.filter((n) => n.group === g).map((n) => `<button data-action="nav" data-view="${n.id}" class="${ui.view === n.id ? 'active' : ''}">${ICON[n.icon || n.id] || ICON.overview}<span>${T(n.label)}</span></button>`).join('')}</div></div>`).join('')}
+      ${NAV_GROUPS.map(([g, label]) => `<div class="sheet-group" role="group" aria-label="${T(label)}"><span class="nav-gl">${T(label)}</span><div class="sheet-grid">${NAV.filter((n) => n.group === g).map((n) => `<button data-action="nav" data-view="${n.id}" class="${ui.view === n.id ? 'active' : ''}">${ICON[n.icon || n.id] || ICON.overview}<span>${T(n.label)}</span></button>`).join('')}</div></div>`).join('')}
     </div>`;
+    trapFocus(el);
   }
-  function closeMore() { const el = $('#more-sheet'); if (el) { el.hidden = true; el.innerHTML = ''; } }
+  function closeMore() { const el = $('#more-sheet'); if (el && !el.hidden) { el.hidden = true; el.innerHTML = ''; const b = $('.more-btn'); if (b) b.focus(); } }
 
   function renderTopbar() {
     const c = me().crew;
@@ -211,16 +224,58 @@
     if (ui.view !== 'pvt') pvtAbort();
     H.bus.emit('leave', ui.view);
     closeMore();
-    renderNav();
-    renderTopbar();
     const v = $('#view');
-    const views = { overview: vOverview, trends: vTrends, checkin: vCheckin, pvt: vPvt, protocols: vProtocols, report: vReport, crew: vCrew, validation: vValidation, profile: vProfile };
-    const extra = EXTRA_VIEWS[ui.view];
-    v.innerHTML = extra ? extra.render() : (views[ui.view] || vOverview)();
-    if (ui.view === 'trends') mountTrendChart();
-    if (extra && extra.mount) extra.mount(v);
+    // Error boundary: a failing view shows a recoverable message instead of a blank page.
+    try {
+      renderNav();
+      renderTopbar();
+      renderAlertBar();
+      const views = { overview: vOverview, trends: vTrends, checkin: vCheckin, pvt: vPvt, protocols: vProtocols, report: vReport, crew: vCrew, validation: vValidation, profile: vProfile };
+      const extra = EXTRA_VIEWS[ui.view];
+      v.innerHTML = extra ? extra.render() : (views[ui.view] || vOverview)();
+      if (ui.view === 'trends') mountTrendChart();
+      if (extra && extra.mount) extra.mount(v);
+    } catch (err) {
+      console.error(err);
+      v.innerHTML = `<div class="empty err"><div><b>This screen hit a problem.</b><p>${esc(err && err.message)}</p>
+        <div class="btns"><button class="btn" data-action="nav" data-view="overview">Back to My health</button></div></div></div>`;
+    }
     animateIn();
+    const h1 = v.querySelector('h1');
+    const ann = $('#announce');
+    if (ann && h1) ann.textContent = `${T((NAV.find((n) => n.id === ui.view) || {}).label || '')}: ${h1.textContent}`;
   }
+
+  // Urgent findings follow the astronaut to every screen until acknowledged.
+  function renderAlertBar() {
+    const bar = $('#alert-bar');
+    if (!bar) return;
+    const acks = store.acks[ui.crewId] || {};
+    const urgent = me().insights.filter((i) => i.level >= 3 && acks[i.id] !== M.day);
+    if (!urgent.length) { bar.hidden = true; bar.innerHTML = ''; return; }
+    const i = urgent[0];
+    bar.hidden = false;
+    bar.innerHTML = `<span class="ab-k">${T('Urgent')}</span><b>${esc(i.title)}</b><span class="ab-a">${esc(i.actions[0])}</span>
+      <div class="btns">${i.protocol ? `<button class="btn sm" data-action="open-protocol" data-id="${i.protocol}">${i.protocol}</button>` : ''}
+      <button class="btn sm" data-action="nav" data-view="triage">${T('Symptom triage')}</button><button class="btn sm ghost" data-action="ack" data-id="${i.id}">${T('Acknowledge')}</button></div>`;
+  }
+
+  // Keeps Tab inside an open dialog.
+  function trapFocus(container) {
+    const f = container.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    if (f.length) f[0].focus();
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const dlg = document.querySelector('#palette:not([hidden]) .pal-box, #more-sheet:not([hidden]) .sheet, #spe:not(.min) .spe-box, #lock .lock-box');
+    if (!dlg) return;
+    const f = [...dlg.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((x) => !x.disabled && x.offsetParent !== null);
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    else if (!dlg.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+  });
 
   function go(view) {
     ui.view = view;
@@ -513,9 +568,13 @@
           </div>
           <div class="chart-head">
             <span class="legend"><i class="lg-line"></i>Measured${hasB ? '<i class="lg-band"></i>Your normal range' : ''}<i class="lg-limit"></i>Limits</span>
-            <div class="seg">${[30, 60, 0].map((n) => `<button class="${ui.range === n ? 'active' : ''}" data-action="set-range" data-range="${n}">${n ? n + ' d' : 'Mission'}</button>`).join('')}</div>
+            <div class="chart-tools">
+              <div class="seg">${[30, 60, 0].map((n) => `<button class="${ui.range === n ? 'active' : ''}" data-action="set-range" data-range="${n}">${n ? n + ' d' : 'Mission'}</button>`).join('')}</div>
+              <div class="seg"><button class="${ui.trendTable ? '' : 'active'}" data-action="trend-view" data-v="chart" aria-pressed="${!ui.trendTable}">Chart</button><button class="${ui.trendTable ? 'active' : ''}" data-action="trend-view" data-v="table" aria-pressed="${!!ui.trendTable}">Table</button></div>
+              <button class="btn sm ghost" data-action="trend-csv" title="Download this indicator as CSV">CSV</button>
+            </div>
           </div>
-          <div id="chart"></div>
+          ${ui.trendTable ? trendTable(r) : '<div id="chart"></div>'}
           ${personal && B && !ind.expected && B.source !== 'default' ? `<div class="rebase">
             <span>${ICON.profile} <b>${SOURCE_LABEL[B.source]}</b> — ${SOURCE_TEXT[B.source]}${B.n ? ` (${B.n} readings)` : ''}.</span>
             ${B.source === 'rebased' ? `<button class="btn sm" data-action="unrebase" data-ind="${ind.id}">Reset to automatic</button>` : r.current != null && !r.noData ? `<button class="btn sm" data-action="rebase" data-ind="${ind.id}" title="Use your last 14 days as your normal for this indicator">This is normal for me</button>` : ''}
@@ -523,6 +582,26 @@
           <details class="how"><summary>How HELIOS assesses this</summary><p>${how}${personal ? ' Your baseline comes from your own data: preflight readings if you have them, otherwise your first 7 readings; after that it adapts slowly using readings more than 14 days old, so a developing problem does not become your new normal.' : ''}</p></details>
         </div>
       </div>`;
+  }
+
+  function trendRange() {
+    const d1 = ui.domain === 'env' ? H.MISSION.day : M.day;
+    return [ui.range ? Math.max(1, d1 - ui.range + 1) : 1, d1];
+  }
+  const trendDate = (d) => (ui.domain === 'env' ? H.dayToDate(d) : dayDate(d)).toISOString().slice(0, 10);
+
+  // Screen-reader friendly alternative to the chart.
+  function trendTable(r) {
+    const [d0, d1] = trendRange(), ind = r.ind, B = r.base;
+    const rows = r.pts.filter((p) => p[0] >= d0 && p[0] <= d1).reverse();
+    const flag = (d, v) => {
+      if (!B || B.mean == null) return '';
+      const z = (v - (B.mean + (ind.expected ? ind.expected(d) : 0))) / B.sd;
+      return Math.abs(z) >= 2 ? `<span class="muted">${z > 0 ? '+' : ''}${z.toFixed(1)} SD</span>` : '';
+    };
+    return `<div class="table-wrap trend-table"><table class="table"><caption class="sr-only">${esc(ind.name)}, mission days ${d0}–${d1}</caption>
+      <thead><tr><th scope="col">Day</th><th scope="col">Date</th><th scope="col">${esc(ind.short)} (${esc(ind.unit)})</th><th scope="col">vs. baseline</th></tr></thead>
+      <tbody>${rows.length ? rows.map(([d, v]) => `<tr><td class="mono">D${d}</td><td class="mono">${trendDate(d)}</td><td class="mono">${H.fmt(v, ind.dec)}</td><td>${flag(d, v)}</td></tr>`).join('') : '<tr><td colspan="4" class="muted">No readings in this range.</td></tr>'}</tbody></table></div>`;
   }
 
   function mountTrendChart() {
@@ -1098,6 +1177,7 @@
             <label class="btn sm primary file-btn">${ICON.upload} Import CSV<input type="file" accept=".csv,text/csv" data-change="import-csv" hidden></label>
             <button class="btn sm" data-action="csv-template">CSV template</button>
             <button class="btn sm" data-action="export-me">Export backup</button>
+            <button class="btn sm" data-action="export-readings">Export readings CSV</button>
             <label class="btn sm file-btn">Restore backup<input type="file" accept=".json,application/json" data-change="import-json" hidden></label>
           </div>
           <p class="muted small">CSV: one row per day — a <code>date</code> column (YYYY-MM-DD) plus any of ${H.LOGGABLE.map((x) => `<code>${x}</code>`).join(' ')}. Rows dated before your mission start become your preflight baseline.</p>
@@ -1211,6 +1291,7 @@
     H.PROTOCOLS.forEach((p) => list.push({ label: `${p.id} ${p.title}`, hint: 'Protocol', run: () => { ui.protocol = p.id; go('protocols'); } }));
     crewList().forEach((c) => list.push({ label: `Switch to ${c.name}`, hint: c.role, run: () => { ui.crewId = c.id; go('overview'); } }));
     list.push({ label: 'Play voice briefing', hint: 'Action', run: speak });
+    list.push({ label: 'Take the guided tour', hint: 'Action', run: () => H.tour && H.tour.start() });
     list.push({ label: 'Toggle sleep-period display', hint: 'Action', run: () => $('[data-action="night"]').click() });
     list.push({ label: 'Start alertness test', hint: 'Action', run: () => { go('pvt'); pvtStart(); } });
     list.push({ label: 'Queue downlink report', hint: 'Action', run: () => { go('report'); $('[data-action="queue"]').click(); } });
@@ -1336,6 +1417,22 @@
     }
     else if (act === 'print') window.print();
     else if (act === 'brief') speak();
+    else if (act === 'trend-view') { ui.trendTable = el.dataset.v === 'table'; render(); }
+    else if (act === 'trend-csv') {
+      const r = resultFor(ui.ind), [d0, d1] = trendRange();
+      const rows = r.pts.filter((p) => p[0] >= d0 && p[0] <= d1).map(([d, v]) => `${trendDate(d)},${d},${+v.toFixed(r.ind.dec + 2)}`);
+      download(`helios-${me().crew.id}-${r.ind.id}.csv`, `date,mission_day,${r.ind.id}\n${rows.join('\n')}\n`, 'text/csv');
+    }
+    else if (act === 'export-readings') {
+      // Everything HELIOS knows about you, in the same format the CSV importer reads.
+      const cd = ds.crew.me, p = store.profile, ids = H.LOGGABLE;
+      const lines = [['date'].concat(ids).join(',')];
+      for (let d = 1; d <= cd.day; d++) {
+        const vals = ids.map((id) => (cd.series[id][d] == null ? '' : +cd.series[id][d].toFixed(3)));
+        if (vals.some((v) => v !== '')) lines.push([H.dayToDate(d, p.start).toISOString().slice(0, 10)].concat(vals).join(','));
+      }
+      download(`helios-readings-${new Date().toISOString().slice(0, 10)}.csv`, lines.join('\n') + '\n', 'text/csv');
+    }
     else if (act === 'more') openMore();
     else if (act === 'close-more') closeMore();
     else if (act === 'edit-profile') { ui.editProfile = true; render(); }
@@ -1431,6 +1528,8 @@
       return;
     }
     if (e.key === 'Enter' && e.target.matches && e.target.matches('g.spot')) { e.target.dispatchEvent(new MouseEvent('click', { bubbles: true })); return; }
+    if (e.key === 'Escape' && !$('#more-sheet').hidden) { closeMore(); return; }
+    if (e.key === 'Escape' && $('#spe') && !$('#spe').classList.contains('min')) { const m = $('#spe [data-action="spe-min"], #spe [data-action="spe-cancel"]'); if (m) m.click(); return; }
     if (e.key === '/' && !e.target.closest('input, textarea, select')) { e.preventDefault(); openPalette(); return; }
     if (ui.view === 'pvt' && e.code === 'Space' && pvt.state !== 'idle' && pvt.state !== 'done') { e.preventDefault(); pvtRespond(); }
   });
@@ -1445,17 +1544,67 @@
   // ---------- feature API ----------
   H.app = {
     store, ui, ICON, M, $, esc, pill, lv, T, save, log, toast, go, slot, download,
-    render: () => render(), recompute: () => recompute(), me: () => me(), crew: () => crewList(),
+    render: () => render(), recompute: () => recompute(), normalize, armAutoLock, trapFocus, me: () => me(), crew: () => crewList(),
     data: () => ds, assessments: () => A, dayFor, dayDate, todayCheckin,
     addView(v) { EXTRA_VIEWS[v.id] = v; if (!NAV.find((n) => n.id === v.id)) NAV.push(v); if (v.icon && v.iconSvg) ICON[v.icon] = v.iconSvg; },
     addIcon(name, svgInner) { ICON[name] = P(svgInner); },
   };
   (H.features || []).forEach((setup) => setup(H.app));
 
+  // ---------- lock screen (encryption at rest) ----------
+  function showLock() {
+    const el = document.createElement('div');
+    el.id = 'lock';
+    let fails = 0, until = 0;
+    el.innerHTML = `<form class="lock-box" autocomplete="off">
+      <svg viewBox="0 0 32 32" class="boot-logo" aria-hidden="true"><circle cx="16" cy="16" r="6.5" class="sun"/><ellipse cx="16" cy="16" rx="14" ry="6" class="orbit" transform="rotate(-25 16 16)"/></svg>
+      <h1>HELIOS</h1><p>${T('Your health record is encrypted on this device.')}</p>
+      <label for="lock-pin" class="sr-only">PIN</label>
+      <input id="lock-pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="PIN" maxlength="32" required>
+      <button class="btn primary" type="submit">${T('Unlock')}</button><p class="lock-msg" role="status"></p></form>`;
+    document.body.appendChild(el);
+    const input = el.querySelector('input'), msg = el.querySelector('.lock-msg');
+    input.focus();
+    el.querySelector('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (Date.now() < until) { msg.textContent = `Too many attempts — wait ${Math.ceil((until - Date.now()) / 1000)} s.`; return; }
+      msg.textContent = T('Unlocking…');
+      try {
+        const data = await H.vault.unlock(input.value);
+        Object.keys(store).forEach((k) => delete store[k]);
+        Object.assign(store, normalize(data));
+        ui.crewId = store.profile ? 'me' : 'nakamura';
+        el.remove();
+        start();
+      } catch (err) {
+        fails++; input.value = '';
+        if (fails >= 5) { until = Date.now() + 30000 * (fails - 4); }
+        msg.textContent = fails >= 5 ? 'Wrong PIN. Locked for 30 s.' : 'Wrong PIN.';
+      }
+    });
+  }
+
+  // Auto-lock after inactivity when encryption is on.
+  let idleTimer = null;
+  function armAutoLock() {
+    const min = (store.prefs && store.prefs.autoLockMin) || 10;
+    clearTimeout(idleTimer);
+    if (!(H.vault && H.vault.unlocked())) return;
+    idleTimer = setTimeout(async () => { await H.vault.flush(); H.vault.lock(); location.reload(); }, min * 60000);
+  }
+  ['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, armAutoLock, { passive: true }));
+  window.addEventListener('pagehide', () => { if (H.vault) H.vault.flush(); });
+  window.addEventListener('error', (e) => { if (e.message && !/ResizeObserver/.test(e.message)) console.warn('HELIOS error:', e.message); });
+
   // ---------- boot ----------
   try { if (localStorage.getItem('helios.night') === '1') document.body.classList.add('night'); } catch (e) { /* ignore */ }
   const initial = location.hash.slice(1);
   if (NAV.some((n) => n.id === initial)) ui.view = initial;
+  if (H.vault && H.vault.enabled() && !H.vault.unlocked()) { const b = $('#boot'); if (b) b.remove(); showLock(); }
+  else start();
+
+  function start() {
+  armAutoLock();
   H.bus.emit('boot');
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
   recompute();
@@ -1475,4 +1624,5 @@
   }
   render();
   setInterval(tickClock, 1000);
+  }
 })(window.H);

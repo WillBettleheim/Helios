@@ -39,7 +39,9 @@
     </aside>
     <div class="main">
       <header class="topbar" id="topbar"></header>
+      <div id="alert-bar" role="alert" hidden></div>
       <main id="view" tabindex="-1"></main>
+      <div id="announce" class="sr-only" aria-live="polite"></div>
       <footer class="foot">HELIOS prototype · simulated sensor data · not a medical device</footer>
     </div>
   </div>
@@ -48,6 +50,7 @@
   <div id="more-sheet" hidden></div>
 
   <script src="js/i18n.js"></script>
+  <script src="js/vault.js"></script>
   <script src="js/cosmos.js"></script>
   <script src="js/data.js"></script>
   <script src="js/engine.js"></script>
@@ -65,6 +68,7 @@
   <script src="js/features/nutrition.js"></script>
   <script src="js/features/spaceweather.js"></script>
   <script src="js/features/settings.js"></script>
+  <script src="js/features/tour.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

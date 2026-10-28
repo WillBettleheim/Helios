@@ -76,6 +76,8 @@
   };
   const slot = (name, ...args) => H.bus.emit('slot:' + name, ...args).filter(Boolean).join('');
 
+  // Per-person collections keyed by crew id; "me" is the profile owner.
+  const PERSONAL_KEYS = ['checkins', 'pvt', 'steps', 'acks', 'labs', 'cog', 'outcomes', 'medlog', 'planner'];
   const SYMPTOMS = [
     ['headache', 'Headache'], ['vision', 'Vision change / blur'], ['congestion', 'Congestion / sinus pressure'],
     ['back', 'Back pain'], ['nausea', 'Nausea'], ['rash', 'Skin rash or blisters'], ['fatigue', 'Unusual fatigue'],
@@ -84,12 +86,7 @@
 
   // ---------- state ----------
   // Fills in anything an older or damaged record is missing, so a bad save can't break startup.
-  function normalize(s) {
-    const obj = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {});
-    const arr = (x) => (Array.isArray(x) ? x : []);
-    s = obj(s);
-    return Object.assign(s, { v: 1, checkins: obj(s.checkins), pvt: obj(s.pvt), log: arr(s.log), steps: obj(s.steps), acks: obj(s.acks), queue: arr(s.queue) });
-  }
+  const normalize = (s) => H.sanitize.store(s);
   function loadStore() {
     if (H.vault && H.vault.enabled()) return normalize({});      // filled in after unlock
     try { return normalize(JSON.parse(localStorage.getItem(STORE_KEY))); } catch (e) { return normalize({}); }
@@ -210,9 +207,9 @@
       </div>
       <div class="tb-right">
         <label class="crew-select">
-          <span class="avatar">${c.initials}</span>
+          <span class="avatar">${esc(c.initials)}</span>
           <span class="sr-only">Crew member</span>
-          <select data-change="crew">${crewList().map((x) => `<option value="${x.id}" ${x.id === ui.crewId ? 'selected' : ''}>${esc(x.name)}${x.self ? ' (you)' : ''} — ${x.role}</option>`).join('')}</select>
+          <select data-change="crew">${crewList().map((x) => `<option value="${x.id}" ${x.id === ui.crewId ? 'selected' : ''}>${esc(x.name)}${x.self ? ' (you)' : ''} — ${esc(x.role)}</option>`).join('')}</select>
         </label>
         <button class="pal-btn" data-action="palette" aria-label="Open command palette">${ICON.search}<span>Search</span><kbd>⌘K</kbd></button>
         <button class="icon-btn" data-action="night" title="Toggle sleep-period display (low blue light)" aria-label="Toggle sleep-period display">${document.body.classList.contains('night') ? ICON.sun : ICON.moon}</button>
@@ -220,9 +217,22 @@
     tickClock();
   }
 
+  let lastView = null;
+  // Identifies the focused control so focus can be restored after a re-render.
+  function focusKey() {
+    const a = document.activeElement;
+    if (!a || a === document.body || !$('#view').contains(a) && !$('#nav').contains(a)) return null;
+    if (a.id) return '#' + CSS.escape(a.id);
+    const attrs = ['data-action', 'data-view', 'data-id', 'data-ind', 'data-domain', 'data-range', 'data-i', 'data-change', 'data-v', 'data-k', 'data-t', 'name', 'value']
+      .filter((k) => a.hasAttribute(k)).map((k) => `[${k}="${CSS.escape(a.getAttribute(k))}"]`).join('');
+    return attrs ? a.tagName.toLowerCase() + attrs : null;
+  }
   function render() {
     if (ui.view !== 'pvt') pvtAbort();
-    H.bus.emit('leave', ui.view);
+    const changed = lastView !== ui.view;
+    if (changed && lastView) H.bus.emit('leave', lastView);
+    lastView = ui.view;
+    const fk = changed ? null : focusKey();
     closeMore();
     const v = $('#view');
     // Error boundary: a failing view shows a recoverable message instead of a blank page.
@@ -240,10 +250,15 @@
       v.innerHTML = `<div class="empty err"><div><b>This screen hit a problem.</b><p>${esc(err && err.message)}</p>
         <div class="btns"><button class="btn" data-action="nav" data-view="overview">Back to My health</button></div></div></div>`;
     }
-    animateIn();
-    const h1 = v.querySelector('h1');
-    const ann = $('#announce');
-    if (ann && h1) ann.textContent = `${T((NAV.find((n) => n.id === ui.view) || {}).label || '')}: ${h1.textContent}`;
+    if (changed) {
+      animateIn();
+      const h1 = v.querySelector('h1');
+      const ann = $('#announce');
+      if (ann && h1) ann.textContent = `${T((NAV.find((n) => n.id === ui.view) || {}).label || '')}: ${h1.textContent}`;
+    } else if (fk) {
+      const el = document.querySelector(fk);
+      if (el) el.focus({ preventScroll: true });
+    }
   }
 
   // Urgent findings follow the astronaut to every screen until acknowledged.
@@ -277,7 +292,16 @@
     else if (!dlg.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
   });
 
+  function switchCrew(id) {
+    if (!A[id]) return;
+    pvtAbort();
+    Object.assign(pvt, { state: 'idle', result: null });
+    ui.checkinDone = false; ui.checkinPrev = null; ui.editProfile = false;
+    ui.crewId = id;
+  }
+
   function go(view) {
+    if (view !== ui.view) lastView = lastView || ui.view;
     ui.view = view;
     if (location.hash !== '#' + view) history.replaceState(null, '', '#' + view);
     render();
@@ -317,7 +341,7 @@
       <text class="pl" x="${P1[0]}" y="${P1[1] + 34}" text-anchor="middle">MARS · D${M.plannedDays}</text>
       <circle cx="${sx}" cy="${sy}" r="26" fill="url(#g-ship)" class="ship-glow"/>
       <g transform="translate(${sx} ${sy}) rotate(${ang})"><path class="ship" d="M9 0 L-6 -5 L-3 0 L-6 5 Z"/></g>
-      <text class="pl ship-l" x="${sx}" y="${sy - 22}" text-anchor="middle">${M.name} · D${M.day}</text>
+      <text class="pl ship-l" x="${sx}" y="${sy - 22}" text-anchor="middle">${esc(M.name)} · D${M.day}</text>
     </svg>
     <div class="traj-stats">
       <div><span class="k">Transit</span><b class="mono">${Math.round(f * 100)}%</b></div>
@@ -407,6 +431,7 @@
     const envRow = (id) => { const r = env[id]; return `<li><span>${r.ind.short}</span><span class="mono">${H.fmt(r.current, r.ind.dec)} ${r.ind.unit}</span>${r.status ? pill(r.status) : ''}</li>`; };
     const nextOf = (id) => {
       const ind = H.INDICATORS.find((i) => i.id === id), off = ds.crew[c.id].offsets[id];
+      if (off == null) return '—';
       for (let d = M.day + 1; d <= M.day + ind.cadence; d++) if ((d + off) % ind.cadence === 0) return d - M.day;
       return ind.cadence;
     };
@@ -452,9 +477,9 @@
               <li class="${exer >= 120 ? 'ok' : ''}">${exer >= 120 ? ICON.check : '<i class="todo"></i>'}<span>Countermeasure exercise</span><small class="mono">${exer ?? 0}/120 min</small></li>
             </ul>
             <div class="sched">
-              <div><span class="k">Blood & saliva</span><span class="mono">in ${nextOf('lymph')} d</span></div>
-              <div><span class="k">Bone ultrasound</span><span class="mono">in ${nextOf('bmd')} d</span></div>
-              <div><span class="k">OCT eye scan</span><span class="mono">in ${nextOf('rnfl')} d</span></div>
+              <div><span class="k">Blood & saliva</span><span class="mono">${c.personal ? 'when logged' : `in ${nextOf('lymph')} d`}</span></div>
+              <div><span class="k">Bone ultrasound</span><span class="mono">${c.personal ? 'when logged' : `in ${nextOf('bmd')} d`}</span></div>
+              <div><span class="k">OCT eye scan</span><span class="mono">${c.personal ? 'when logged' : `in ${nextOf('rnfl')} d`}</span></div>
             </div>
           </div>
           <div class="card">
@@ -549,7 +574,7 @@
     return `
       <div class="page-head"><div><p class="eyebrow">Trends</p><h1>${ui.domain === 'env' ? 'Habitat environment' : dom.name}</h1>
         <p class="lede">${ui.domain === 'env' ? 'Cabin conditions shared by the whole crew — often the hidden cause behind symptoms.' : esc(dom.risk)}</p></div></div>
-      <div class="tabs" role="tablist">${tabs}</div>
+      <div class="tabs" role="group" aria-label="Health domains">${tabs}</div>
       <div class="trend-layout">
         <div class="ind-list">${list}</div>
         <div class="card detail">
@@ -559,7 +584,7 @@
           </div>
           ${r.reasons.length ? `<ul class="reasons">${r.reasons.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
           <div class="stats">
-            ${stat('Current', `${H.fmt(r.current, ind.dec)} <small>${ind.unit}</small>`, r.latestDay === M.day ? 'today' : `last reading D${r.latestDay}`)}
+            ${stat('Current', `${H.fmt(r.current, ind.dec)} <small>${ind.unit}</small>`, r.noData ? 'no readings yet' : r.latestDay === M.day ? 'today' : `last reading D${r.latestDay}`)}
             ${stat(ind.expected ? 'Expected now' : B && B.source === 'calibrating' ? 'Learning' : 'Baseline', baseTxt, B ? (ind.expected ? 'in-flight model' : SOURCE_TEXT[B.source]) : 'absolute limits')}
             ${stat('Deviation', r.z != null ? `${r.z > 0 ? '+' : ''}${r.z.toFixed(1)} SD` : '—', r.z != null ? 'from baseline' : '')}
             ${stat('Trend', slope != null ? `${slope > 0 ? '+' : ''}${H.fmt(slope, ind.dec + (Math.abs(slope) < 1 ? 1 : 0))}` : '—', `${ind.unit} per week`)}
@@ -785,7 +810,7 @@
   }
 
   function pvtStart() {
-    Object.assign(pvt, { state: 'wait', trials: [], falseStarts: 0, endAt: performance.now() + pvt.duration * 1000, result: null });
+    Object.assign(pvt, { state: 'wait', trials: [], falseStarts: 0, endAt: performance.now() + pvt.duration * 1000, result: null, crewId: ui.crewId });
     $('#pvt-box').focus();
     pvtSchedule();
   }
@@ -843,6 +868,7 @@
       lapses: valid.filter((t) => t > PVT_LAPSE).length,
       falseStarts: pvt.falseStarts, n: valid.length,
     };
+    if (pvt.crewId !== ui.crewId) { pvt.state = 'idle'; return; }   // crew changed mid-test: discard
     (store.pvt[ui.crewId] = store.pvt[ui.crewId] || []).push(result);
     log(`Alertness test: mean ${result.mean} ms, ${result.lapses} lapses, ${result.falseStarts} early`, 'pvt');
     recompute();
@@ -931,7 +957,7 @@
       <div class="card report">
         <div class="report-head">
           <div><span class="k">Crew member</span><b>${esc(c.name)}</b><small>${esc(c.role)}</small></div>
-          <div><span class="k">Mission</span><b>${M.name}</b><small>Day ${M.day} · ${dayDate(M.day).toISOString().slice(0, 10)}</small></div>
+          <div><span class="k">Mission</span><b>${esc(M.name)}</b><small>Day ${M.day} · ${dayDate(M.day).toISOString().slice(0, 10)}</small></div>
           <div><span class="k">Readiness</span><b class="t-${lv(a.overall)}">${a.readiness} / 100</b><small>${H.LEVEL_LABEL[a.overall]}</small></div>
         </div>
         <div class="table-wrap"><table class="table">
@@ -945,7 +971,7 @@
       </div>
       <div class="card">
         <h3>${ICON.antenna} Downlink queue</h3>
-        ${store.queue.length ? `<ul class="log">${store.queue.map((q) => `<li><span class="mono">D${q.day}</span>${esc(q.title)} <small class="muted">· ${q.kb} KB · ${esc(q.crewName)}</small></li>`).join('')}</ul>
+        ${store.queue.length ? `<ul class="log">${store.queue.map((q) => `<li><span class="mono">D${+q.day}</span>${esc(q.title)} <small class="muted">· ${+q.kb} KB · ${esc(q.crewName)}</small></li>`).join('')}</ul>
           <button class="btn sm ghost" data-action="clear-queue">Clear queue</button>` : '<p class="muted small">Nothing queued. Items you flag for the flight surgeon are batched here for the next window.</p>'}
       </div>`;
   }
@@ -956,7 +982,7 @@
       const a = A[c.id], ci = todayCheckin(c.id);
       const privateBehav = ci && ci.share === 'private';
       return `<tr>
-        <td><button class="crew-cell" data-action="set-crew" data-id="${c.id}"><span class="avatar">${c.initials}</span><span><b>${esc(c.name)}</b><small>${c.role}</small></span></button></td>
+        <td><button class="crew-cell" data-action="set-crew" data-id="${c.id}"><span class="avatar">${esc(c.initials)}</span><span><b>${esc(c.name)}</b><small>${esc(c.role)}</small></span></button></td>
         <td class="mono t-${lv(a.overall)}"><b>${a.readiness}</b></td>
         ${a.domains.map((d) => `<td>${d.id === 'behav' && privateBehav ? `<span class="tag">${ICON.lock} Private</span>` : `<i class="dot lvl-${lv(d.status)}" title="${H.LEVEL_LABEL[d.status]}"></i><span class="sr-only">${H.LEVEL_LABEL[d.status]}</span>`}</td>`).join('')}
         <td>${ci ? `<span class="t-nominal">${ICON.check}</span>` : '<span class="muted">Pending</span>'}</td>
@@ -1157,7 +1183,7 @@
     return `
       <div class="page-head"><div class="who">
         <span class="avatar big">${initials(p.name)}</span>
-        <div><p class="eyebrow">My profile</p><h1>${esc(p.name)}</h1><p class="lede">${esc(p.role || 'Astronaut')} · ${esc(p.mission || 'My mission')} · day ${day} of ${p.plannedDays} · started ${esc(p.start)}</p></div>
+        <div><p class="eyebrow">My profile</p><h1>${esc(p.name)}</h1><p class="lede">${esc(p.role || 'Astronaut')} · ${esc(p.mission || 'My mission')} · day ${day} of ${+p.plannedDays} · started ${esc(p.start)}</p></div>
       </div><button class="btn" data-action="edit-profile">Edit profile</button></div>
 
       <section class="adapt-hero">
@@ -1232,11 +1258,10 @@
     const baseline = {};
     BASELINE_FIELDS().forEach((i) => { const x = parseFloat(fd.get('b-' + i.id)); if (Number.isFinite(x)) baseline[i.id] = x; });
     const prev = store.profile || {};
-    store.profile = {
-      name: String(fd.get('name')).trim().slice(0, 60) || 'Astronaut', role: String(fd.get('role') || '').trim().slice(0, 40),
-      mission: String(fd.get('mission') || '').trim().slice(0, 40), start: String(fd.get('start')), plannedDays: Math.max(1, parseInt(fd.get('plannedDays'), 10) || 180),
-      priorDose: parseFloat(fd.get('priorDose')) || 0, sensitivity: fd.get('sensitivity') || 'standard', baseline, rebase: prev.rebase || {}, created: prev.created || Date.now(),
-    };
+    store.profile = H.sanitize.profile({
+      uid: prev.uid, name: fd.get('name'), role: fd.get('role'), mission: fd.get('mission'), start: fd.get('start'), plannedDays: fd.get('plannedDays'),
+      priorDose: fd.get('priorDose'), sensitivity: fd.get('sensitivity'), baseline, rebase: prev.rebase || {}, created: prev.created || Date.now(), updated: Date.now(),
+    });
     store.personal = store.personal || { records: {} };
     ui.editProfile = false;
     ui.crewId = 'me';
@@ -1289,7 +1314,7 @@
       ui.domain = ind.domain || 'env'; ui.ind = ind.id; go('trends');
     } }));
     H.PROTOCOLS.forEach((p) => list.push({ label: `${p.id} ${p.title}`, hint: 'Protocol', run: () => { ui.protocol = p.id; go('protocols'); } }));
-    crewList().forEach((c) => list.push({ label: `Switch to ${c.name}`, hint: c.role, run: () => { ui.crewId = c.id; go('overview'); } }));
+    crewList().forEach((c) => list.push({ label: `Switch to ${c.name}`, hint: c.role, run: () => { switchCrew(c.id); go('overview'); } }));
     list.push({ label: 'Play voice briefing', hint: 'Action', run: speak });
     list.push({ label: 'Take the guided tour', hint: 'Action', run: () => H.tour && H.tour.start() });
     list.push({ label: 'Toggle sleep-period display', hint: 'Action', run: () => $('[data-action="night"]').click() });
@@ -1322,8 +1347,11 @@
     }
     $('.pal-list').innerHTML = listHtml;
   }
-  function openPalette() { palette.open = true; palette.q = ''; palette.i = 0; renderPalette(); }
-  function closePalette() { palette.open = false; renderPalette(); }
+  function openPalette() { palette.ret = document.activeElement; palette.open = true; palette.q = ''; palette.i = 0; renderPalette(); }
+  function closePalette() {
+    palette.open = false; renderPalette();
+    if (palette.ret && document.contains(palette.ret)) palette.ret.focus({ preventScroll: true });
+  }
   function runPalette(i) {
     const c = paletteMatches()[i];
     closePalette();
@@ -1362,7 +1390,7 @@
     else if (act === 'set-domain') { ui.domain = el.dataset.domain; ui.ind = indicatorsFor(ui.domain)[0].id; render(); }
     else if (act === 'set-ind') { ui.ind = el.dataset.ind; render(); }
     else if (act === 'set-range') { ui.range = +el.dataset.range; render(); }
-    else if (act === 'set-crew') { ui.crewId = el.dataset.id; go('overview'); }
+    else if (act === 'set-crew') { switchCrew(el.dataset.id); go('overview'); }
     else if (act === 'open-protocol') { ui.protocol = el.dataset.id; go('protocols'); }
     else if (act === 'night') {
       document.body.classList.toggle('night');
@@ -1417,6 +1445,8 @@
     }
     else if (act === 'print') window.print();
     else if (act === 'brief') speak();
+    else if (act === 'emergency-export') { let raw = ''; try { raw = localStorage.getItem(STORE_KEY) || localStorage.getItem('helios.vault') || ''; } catch (err) { /* ignore */ } download('helios-raw-data.json', raw, 'application/json'); }
+    else if (act === 'emergency-reset') { if (window.confirm('Clear the saved data on this device and start fresh? Download the raw data first if you need it.')) { try { localStorage.removeItem(STORE_KEY); localStorage.removeItem('helios.vault'); } catch (err) { /* ignore */ } location.reload(); } }
     else if (act === 'trend-view') { ui.trendTable = el.dataset.v === 'table'; render(); }
     else if (act === 'trend-csv') {
       const r = resultFor(ui.ind), [d0, d1] = trendRange();
@@ -1435,6 +1465,7 @@
     }
     else if (act === 'more') openMore();
     else if (act === 'close-more') closeMore();
+    else if (act === 'more-scrim') { if (e.target === el) closeMore(); }
     else if (act === 'edit-profile') { ui.editProfile = true; render(); }
     else if (act === 'cancel-profile') { ui.editProfile = false; render(); }
     else if (act === 'sensitivity') {
@@ -1452,12 +1483,14 @@
     else if (act === 'csv-template') download('helios-readings-template.csv', ['date'].concat(H.LOGGABLE).join(',') + '\n', 'text/csv');
     else if (act === 'export-me') {
       const keep = (o) => (o && o.me ? { me: o.me } : {});
-      download(`helios-profile-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ helios: 1, profile: store.profile, personal: store.personal, checkins: keep(store.checkins), pvt: keep(store.pvt), steps: keep(store.steps) }, null, 2), 'application/json');
+      const b = { helios: 1, profile: store.profile, personal: store.personal };
+      PERSONAL_KEYS.forEach((k) => { b[k] = keep(store[k]); });
+      download(`helios-profile-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(b, null, 2), 'application/json');
     }
     else if (act === 'delete-me') {
       if (!window.confirm('Delete your profile, imported readings, check-ins and test results from this device? This cannot be undone.')) return;
       delete store.profile; delete store.personal;
-      ['checkins', 'pvt', 'steps', 'acks'].forEach((k) => { if (store[k]) delete store[k].me; });
+      PERSONAL_KEYS.forEach((k) => { if (store[k]) delete store[k].me; });
       store.log = store.log.filter((l) => l.crew !== 'me');
       ui.crewId = 'nakamura'; save(); recompute(); go('overview'); toast('Your profile and data were deleted.');
     }
@@ -1470,7 +1503,7 @@
   document.addEventListener('change', (e) => {
     const el = e.target;
     if (el.dataset.change && el.dataset.change !== 'crew' && el.dataset.change !== 'step' && !el.dataset.change.startsWith('import-')) H.bus.emit('change:' + el.dataset.change, el, e);
-    if (el.dataset.change === 'crew') { ui.crewId = el.value; render(); }
+    if (el.dataset.change === 'crew') { switchCrew(el.value); render(); }
     else if (el.dataset.change === 'import-csv' || el.dataset.change === 'import-json') {
       const f = el.files && el.files[0];
       if (!f) return;
@@ -1481,7 +1514,12 @@
         try {
           const b = JSON.parse(t);
           if (!b || b.helios !== 1 || !b.profile) throw new Error('not a HELIOS backup');
-          store.profile = b.profile; store.personal = b.personal || { records: {} };
+          const candidate = { ...store, profile: b.profile, personal: b.personal || { records: {} } };
+          PERSONAL_KEYS.forEach((k) => { if (b[k] && b[k].me) candidate[k] = { ...(store[k] || {}), me: b[k].me }; });
+          const clean = H.sanitize.store(candidate);
+          H.personalBaselines(clean.profile, H.buildPersonal(clean.profile, clean));   // throws if still unusable
+          Object.keys(store).forEach((k) => delete store[k]);
+          Object.assign(store, clean);
           ['checkins', 'pvt', 'steps'].forEach((k) => { if (b[k] && b[k].me) (store[k] = store[k] || {}).me = b[k].me; });
           ui.crewId = 'me'; log('Profile restored from backup', 'import'); recompute(); render(); toast('Backup restored.');
         } catch (err) { toast('That file is not a HELIOS backup.'); }
@@ -1575,7 +1613,7 @@
         Object.assign(store, normalize(data));
         ui.crewId = store.profile ? 'me' : 'nakamura';
         el.remove();
-        start();
+        safeStart();
       } catch (err) {
         fails++; input.value = '';
         if (fails >= 5) { until = Date.now() + 30000 * (fails - 4); }
@@ -1601,7 +1639,16 @@
   const initial = location.hash.slice(1);
   if (NAV.some((n) => n.id === initial)) ui.view = initial;
   if (H.vault && H.vault.enabled() && !H.vault.unlocked()) { const b = $('#boot'); if (b) b.remove(); showLock(); }
-  else start();
+  else safeStart();
+
+  function safeStart() {
+    try { start(); } catch (err) {
+      console.error(err);
+      const b = $('#boot'); if (b) b.remove();
+      $('#view').innerHTML = `<div class="empty err"><div><b>HELIOS could not load your saved data.</b><p>${esc(err && err.message)}</p>
+        <div class="btns"><button class="btn" data-action="emergency-export">Download raw data</button><button class="btn primary" data-action="emergency-reset">Start fresh</button></div></div></div>`;
+    }
+  }
 
   function start() {
   armAutoLock();

@@ -1,2 +1,4 @@
 .DS_Store
 .claude/
+data/sync-store.json
+node_modules/

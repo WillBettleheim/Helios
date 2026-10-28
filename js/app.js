@@ -32,6 +32,9 @@
     sun: P('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
     lock: P('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/>'),
     check: P('<path d="M5 12l5 5L20 7"/>'),
+    speaker: P('<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 010 7M19 6a8.5 8.5 0 010 12"/>'),
+    stop: P('<rect x="6" y="6" width="12" height="12" rx="2"/>'),
+    search: P('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>'),
     arrow: P('<path d="M5 12h14M13 6l6 6-6 6"/>'),
   };
 
@@ -63,7 +66,7 @@
   const store = loadStore();
   function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (e) { /* ignore */ } }
 
-  const ui = { crewId: 'nakamura', view: 'overview', domain: 'behav', ind: 'sleep', range: 60, protocol: 'P-SLP-01', checkinDone: false, vrun: 'run3', vmethod: 'signature' };
+  const ui = { crewId: 'nakamura', view: 'overview', domain: 'behav', ind: 'sleep', range: 60, protocol: 'P-SLP-01', checkinDone: false, vrun: 'final', vmethod: 'ensemble' };
   let ds, A;
 
   const todayCheckin = (id) => ((store.checkins[id] || {})[M.day]) || null;
@@ -134,6 +137,7 @@
           <span class="sr-only">Crew member</span>
           <select data-change="crew">${H.CREW.map((x) => `<option value="${x.id}" ${x.id === ui.crewId ? 'selected' : ''}>${esc(x.name)}${x.self ? ' (you)' : ''} — ${x.role}</option>`).join('')}</select>
         </label>
+        <button class="pal-btn" data-action="palette" aria-label="Open command palette">${ICON.search}<span>Search</span><kbd>⌘K</kbd></button>
         <button class="icon-btn" data-action="night" title="Toggle sleep-period display (low blue light)" aria-label="Toggle sleep-period display">${document.body.classList.contains('night') ? ICON.sun : ICON.moon}</button>
       </div>`;
     tickClock();
@@ -147,6 +151,7 @@
     const views = { overview: vOverview, trends: vTrends, checkin: vCheckin, pvt: vPvt, protocols: vProtocols, report: vReport, crew: vCrew, validation: vValidation };
     v.innerHTML = (views[ui.view] || vOverview)();
     if (ui.view === 'trends') mountTrendChart();
+    animateIn();
   }
 
   function go(view) {
@@ -162,8 +167,86 @@
     const r = 52, c = 2 * Math.PI * r;
     return `<svg class="ring lvl-${lv(level)}" viewBox="0 0 128 128" role="img" aria-label="Readiness ${score} of 100">
       <circle class="track" cx="64" cy="64" r="${r}"/>
-      <circle class="val" cx="64" cy="64" r="${r}" stroke-dasharray="${(score / 100) * c} ${c}" transform="rotate(-90 64 64)"/>
-      <text x="64" y="64" class="ring-num">${score}</text><text x="64" y="84" class="ring-sub">READINESS</text></svg>`;
+      <circle class="val" cx="64" cy="64" r="${r}" stroke-dasharray="${c} ${c}" stroke-dashoffset="${c * (1 - score / 100)}" style="--c:${c}" transform="rotate(-90 64 64)"/>
+      <text x="64" y="64" class="ring-num" data-count="${score}">${score}</text><text x="64" y="84" class="ring-sub">READINESS</text></svg>`;
+  }
+
+  // Earth → Mars transfer arc with the vehicle's current position.
+  function trajectory() {
+    const f = M.day / M.plannedDays;
+    const P0 = [90, 130], C = [500, -30], P1 = [910, 78];
+    const bz = (t) => [0, 1].map((k) => (1 - t) ** 2 * P0[k] + 2 * (1 - t) * t * C[k] + t * t * P1[k]);
+    const pathTo = (t0, t1, n = 40) => Array.from({ length: n + 1 }, (_, i) => bz(t0 + (t1 - t0) * (i / n)).map((v) => v.toFixed(1)).join(',')).join(' ');
+    const [sx, sy] = bz(f), [nx, ny] = bz(Math.min(1, f + 0.01));
+    const ang = Math.atan2(ny - sy, nx - sx) * 180 / Math.PI;
+    const arrive = H.dayToDate(M.plannedDays).toISOString().slice(0, 10);
+    return `<svg class="traj" viewBox="0 0 1000 175" role="img" aria-label="Mission progress: day ${M.day} of ${M.plannedDays}, Earth to Mars">
+      <defs>
+        <radialGradient id="g-earth" cx="35%" cy="35%"><stop offset="0" stop-color="#9fd4ff"/><stop offset=".55" stop-color="#2f7fd8"/><stop offset="1" stop-color="#0b2a55"/></radialGradient>
+        <radialGradient id="g-mars" cx="35%" cy="35%"><stop offset="0" stop-color="#ffc59a"/><stop offset=".55" stop-color="#d0603a"/><stop offset="1" stop-color="#4a160b"/></radialGradient>
+        <radialGradient id="g-ship"><stop offset="0" stop-color="var(--sun)" stop-opacity=".9"/><stop offset="1" stop-color="var(--sun)" stop-opacity="0"/></radialGradient>
+      </defs>
+      <polyline class="arc-future" points="${pathTo(f, 1)}"/>
+      <polyline class="arc-done" points="${pathTo(0, f)}"/>
+      <circle cx="${P0[0]}" cy="${P0[1]}" r="26" class="planet-glow earth"/><circle cx="${P0[0]}" cy="${P0[1]}" r="20" fill="url(#g-earth)"/>
+      <circle cx="${P1[0]}" cy="${P1[1]}" r="20" class="planet-glow mars"/><circle cx="${P1[0]}" cy="${P1[1]}" r="14" fill="url(#g-mars)"/>
+      <text class="pl" x="${P0[0]}" y="${P0[1] + 40}" text-anchor="middle">EARTH · D1</text>
+      <text class="pl" x="${P1[0]}" y="${P1[1] + 34}" text-anchor="middle">MARS · D${M.plannedDays}</text>
+      <circle cx="${sx}" cy="${sy}" r="26" fill="url(#g-ship)" class="ship-glow"/>
+      <g transform="translate(${sx} ${sy}) rotate(${ang})"><path class="ship" d="M9 0 L-6 -5 L-3 0 L-6 5 Z"/></g>
+      <text class="pl ship-l" x="${sx}" y="${sy - 22}" text-anchor="middle">${M.name} · D${M.day}</text>
+    </svg>
+    <div class="traj-stats">
+      <div><span class="k">Transit</span><b class="mono">${Math.round(f * 100)}%</b></div>
+      <div><span class="k">Days to Mars</span><b class="mono">${M.plannedDays - M.day}</b></div>
+      <div><span class="k">Arrival</span><b class="mono">${arrive}</b></div>
+      <div><span class="k">Signal delay</span><b class="mono">${Math.floor(M.lightTimeSec / 60)}m ${pad2(M.lightTimeSec % 60)}s</b></div>
+    </div>`;
+  }
+
+  const BODY_SPOTS = { behav: [86, 30], sans: [113, 42], cardio: [111, 104], immune: [84, 130], msk: [100, 190], rad: [158, 66] };
+  function bodyMap(a) {
+    const spots = a.domains.map((d) => {
+      const [x, y] = BODY_SPOTS[d.id];
+      return `<g class="spot lvl-${lv(d.status)} ${d.status ? 'alert' : ''}" data-action="open-domain" data-domain="${d.id}" tabindex="0" role="button" aria-label="${d.name}: ${H.LEVEL_LABEL[d.status]}">
+        <circle class="pulse" cx="${x}" cy="${y}" r="9"/><circle class="core" cx="${x}" cy="${y}" r="6"/><title>${d.name} · ${H.LEVEL_LABEL[d.status]}</title></g>`;
+    }).join('');
+    return `<div class="body-map">
+      <svg viewBox="0 0 200 350" aria-label="Body status map">
+        <g class="sil">
+          <circle cx="100" cy="40" r="24"/><rect x="91" y="62" width="18" height="14" rx="5"/>
+          <rect x="64" y="72" width="72" height="122" rx="28"/>
+          <rect x="38" y="80" width="22" height="118" rx="11" transform="rotate(8 49 80)"/><rect x="140" y="80" width="22" height="118" rx="11" transform="rotate(-8 151 80)"/>
+          <rect x="70" y="182" width="27" height="156" rx="13"/><rect x="103" y="182" width="27" height="156" rx="13"/>
+        </g>
+        <circle class="rad-halo" cx="100" cy="175" r="${a.domains.find((d) => d.id === 'rad').status ? 168 : 0}"/>
+        <g class="scan"><rect x="20" y="0" width="160" height="3"/></g>
+        ${spots}
+      </svg>
+      <ul class="body-legend">${a.domains.map((d) => `<li><button data-action="open-domain" data-domain="${d.id}"><i class="dot lvl-${lv(d.status)}"></i><span>${d.name}</span><small>${H.LEVEL_LABEL[d.status]}</small></button></li>`).join('')}</ul>
+    </div>`;
+  }
+
+  function briefingText(a) {
+    const c = a.crew;
+    const lines = [`${c.self ? 'Good ' + (new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening') + ', ' + c.first : 'Briefing for ' + c.name}. Mission day ${M.day}.`,
+      `Readiness is ${a.readiness} out of 100. ${HEADLINE[a.overall]}.`];
+    a.insights.slice(0, 3).forEach((i, n) => lines.push(`${n === 0 ? 'First' : n === 1 ? 'Second' : 'Third'}: ${i.title}. ${i.actions[0]}.`));
+    if (a.insights.length > 3) lines.push(`${a.insights.length - 3} more findings are on your dashboard.`);
+    if (!todayCheckin(c.id)) lines.push('Your daily check-in is still due.');
+    lines.push(`Next downlink in ${Math.max(0, Math.round(downlinkSec() / 60))} minutes.`);
+    return lines.join(' ');
+  }
+
+  function speak() {
+    if (!('speechSynthesis' in window)) { toast('Voice briefing is not supported in this browser.'); return; }
+    if (speechSynthesis.speaking) { speechSynthesis.cancel(); return; }
+    const u = new SpeechSynthesisUtterance(briefingText(me()));
+    u.rate = 1.02; u.pitch = 0.95;
+    const btn = () => $('[data-action="brief"]');
+    u.onstart = () => { const b = btn(); if (b) { b.classList.add('on'); b.innerHTML = `${ICON.stop} Stop briefing`; } };
+    u.onend = u.onerror = () => { const b = btn(); if (b) { b.classList.remove('on'); b.innerHTML = `${ICON.speaker} Voice briefing`; } };
+    speechSynthesis.speak(u);
   }
 
   const HEADLINE = ['All indicators within your normal range', 'Mostly nominal — a few trends to watch', 'Action recommended', 'Urgent attention required'];
@@ -206,6 +289,7 @@
 
     return `
       ${viewingOther ? `<div class="banner">${ICON.lock}<span>Viewing <b>${esc(c.name)}</b>'s record as Crew Medical Officer. Private behavioral entries are hidden unless shared.</span></div>` : ''}
+      <section class="mission-banner">${trajectory()}</section>
       <section class="hero lvl-${lv(a.overall)}">
         ${ring(a.readiness, a.overall)}
         <div class="hero-text">
@@ -215,6 +299,7 @@
           <div class="hero-actions">
             ${ci ? `<span class="done">${ICON.check} Check-in done</span>` : `<button class="btn primary" data-action="nav" data-view="checkin">Start daily check-in ${ICON.arrow}</button>`}
             ${pvtDone ? `<span class="done">${ICON.check} Alertness test done</span>` : `<button class="btn" data-action="nav" data-view="pvt">Take alertness test</button>`}
+            <button class="btn ghost" data-action="brief">${ICON.speaker} Voice briefing</button>
           </div>
         </div>
       </section>
@@ -227,6 +312,10 @@
           <div class="insights">${insights}</div>
         </div>
         <aside class="col side">
+          <div class="card body-card">
+            <h3>Body status</h3>
+            ${bodyMap(a)}
+          </div>
           <div class="card">
             <h3>Today</h3>
             <ul class="tasks">
@@ -752,13 +841,29 @@
     return svg + '</svg>';
   }
 
+  // The nested search and ensemble are shown as a fourth "run" so the same table and chart serve them.
+  function finalRun(V) {
+    const N = V.nested, last = V.runs[V.runs.length - 1];
+    return {
+      config: { id: 'final', label: 'Final · ensemble & nested search' }, dataset: last.dataset, markers: last.markers,
+      results: [
+        { id: 'ensemble', name: 'Ensemble of 24 models', kind: 'ML · rank-averaged', desc: `Averages the within-person rank from all ${N.grid} configurations (3 panel sets × 2 models × 4 feature counts). No selection step, so nothing is tuned to the test crew.`,
+          auroc: N.ensemble.auroc, aurocPostOnly: N.ensemble.aurocPostOnly, pValue: N.ensemble.pValue, top1: N.ensemble.top1, crew: N.crew, rows: N.ensemble.rows },
+        { id: 'nested', name: 'Nested model search', kind: 'ML · auto-selected', desc: 'For each held-out astronaut, picks the best of 24 configurations using only the other three crew, then applies it. The most honest estimate of "searching for the best model".',
+          auroc: N.auroc, aurocPostOnly: N.aurocPostOnly, pValue: N.pValue, top1: N.top1, crew: N.crew, rows: N.rows,
+          sensitivity: N.personal.sensitivity, specificity: N.personal.specificity },
+      ],
+    };
+  }
+
   function vValidation() {
     const V = H.VALIDATION;
     if (!V) return '<div class="empty"><div><b>No validation results.</b><p>Run <code>node tools/evaluate.js</code> to generate them.</p></div></div>';
-    const run = V.runs.find((r) => r.config.id === ui.vrun) || V.runs[V.runs.length - 1];
+    const runs = V.nested ? V.runs.concat([finalRun(V)]) : V.runs;
+    const run = runs.find((r) => r.config.id === ui.vrun) || runs[runs.length - 1];
     const m = run.results.find((x) => x.id === ui.vmethod) || run.results[0];
-    const best = V.runs.flatMap((r) => r.results.map((x) => ({ ...x, run: r }))).sort((a, b) => b.auroc - a.auroc)[0];
     const helios = V.runs[0].results.find((x) => x.id === 'rules');
+    const N = V.nested;
     const stat = (k, v, sub) => `<div class="stat"><span class="k">${k}</span><span class="v mono">${v}</span>${sub ? `<small>${sub}</small>` : ''}</div>`;
     const maxZ = Math.max(...run.markers.map((x) => Math.abs(x.meanZ)));
 
@@ -766,17 +871,24 @@
       <div class="page-head"><div><p class="eyebrow">Model validation · real astronaut data</p><h1>How well do the models work on real crew blood data?</h1>
         <p class="lede">HELIOS's detection methods, tested on open clinical data from the four SpaceX Inspiration4 crew members, published by NASA. The task: using each person's own preflight blood draws as their baseline, single out the draw taken the day after landing (R+1) from normal draws.</p></div></div>
 
-      <section class="v-hero">
-        <div class="v-headline">
-          <span class="eyebrow">Best result</span>
-          <div class="v-big mono">${best.auroc.toFixed(2)}<small> AUROC</small></div>
-          <p><b>${esc(best.name)}</b> on ${best.run.dataset.features} lab values (${esc(best.run.config.label.split(' · ')[0])}). It ranked the R+1 draw as most abnormal for <b>${best.top1} of ${best.crew}</b> crew members (p = ${best.pValue.toFixed(3)}, uncorrected).</p>
+      ${N ? `<section class="v-final">
+        <div class="v-headline best">
+          <span class="eyebrow">Best result · ensemble of ${N.grid} models</span>
+          <div class="v-big mono t-nominal" data-count-dec="${N.ensemble.auroc}">${N.ensemble.auroc.toFixed(2)}<small> AUROC</small></div>
+          <p>Ranks the R+1 draw first for <b>${N.ensemble.top1} of ${N.crew}</b> crew. Among post-flight draws AUROC is <b>${N.ensemble.aurocPostOnly.toFixed(2)}</b> (p = ${N.ensemble.pValue.toFixed(3)}).</p>
+        </div>
+        <div class="v-headline muted-card">
+          <span class="eyebrow">Honest estimate · nested model search</span>
+          <div class="v-big mono t-monitor">${N.auroc.toFixed(2)}<small> AUROC</small></div>
+          <p>Choosing one "best" configuration inside each fold scores lower — the choice itself is noisy with 4 people (p = ${N.pValue.toFixed(2)}).</p>
         </div>
         <div class="v-headline muted-card">
           <span class="eyebrow">Current HELIOS rules</span>
           <div class="v-big mono t-action">${helios.auroc.toFixed(2)}<small> AUROC</small></div>
-          <p>Counting values 3+ SD from personal baseline does <b>no better than chance</b> on lab panels with only three baseline draws (0.50 = chance).</p>
+          <p>Counting values 3+ SD from personal baseline does <b>no better than chance</b> on lab panels (0.50 = chance).</p>
         </div>
+      </section>` : ''}
+      <section class="v-hero">
         <div class="stats v-data">
           ${stat('Crew', V.dataset.crew, 'Inspiration4')}
           ${stat('Blood draws', V.dataset.crew * V.dataset.timepoints.length, '3 pre · 4 post')}
@@ -789,7 +901,7 @@
         <div class="detail-head">
           <div><h2>Results by method</h2><p class="muted small">${esc(V.protocol)}</p></div>
         </div>
-        <div class="seg v-runs">${V.runs.map((r) => `<button class="${r.config.id === run.config.id ? 'active' : ''}" data-action="vrun" data-id="${r.config.id}">${esc(r.config.label.split(' · ')[0])}<small>${esc(r.config.label.split(' · ')[1])}</small></button>`).join('')}</div>
+        <div class="seg v-runs">${runs.map((r) => `<button class="${r.config.id === run.config.id ? 'active' : ''}" data-action="vrun" data-id="${r.config.id}">${esc(r.config.label.split(' · ')[0])}<small>${esc(r.config.label.split(' · ')[1])}</small></button>`).join('')}</div>
         <div class="table-wrap">
           <table class="table v-table">
             <thead><tr><th>Method</th><th>AUROC</th><th title="AUROC among post-flight draws only">Post-flight only</th><th>p</th><th>Sensitivity</th><th>Specificity</th><th title="Crew members whose R+1 draw scored highest of their post-flight draws">R+1 ranked first</th></tr></thead>
@@ -797,11 +909,11 @@
               <td><b>${esc(x.name)}</b><small>${esc(x.kind)}</small></td>
               <td>${aurocBar(x.auroc)}</td><td class="mono">${x.aurocPostOnly.toFixed(2)}</td>
               <td class="mono ${x.pValue < 0.05 ? 't-nominal' : 'muted'}">${x.pValue.toFixed(3)}</td>
-              <td class="mono">${Math.round(x.sensitivity * 100)}%</td><td class="mono">${Math.round(x.specificity * 100)}%</td>
+              <td class="mono">${x.sensitivity == null ? '—' : Math.round(x.sensitivity * 100) + '%'}</td><td class="mono">${x.specificity == null ? '—' : Math.round(x.specificity * 100) + '%'}</td>
               <td class="mono">${x.top1} / ${x.crew}</td></tr>`).join('')}</tbody>
           </table>
         </div>
-        <p class="muted small">AUROC: 1.0 = perfect ranking, 0.5 = chance. Sensitivity and specificity use a threshold learned on the other three crew. p is from a 20,000-label permutation test and is not corrected for the 15 method × run combinations.</p>
+        <p class="muted small">AUROC: 1.0 = perfect ranking, 0.5 = chance. Sensitivity and specificity use a threshold learned on the other three crew. p is from a 20,000-label permutation test and is not corrected for the many methods and runs compared.</p>
       </div>
 
       <div class="v-grid">
@@ -822,14 +934,78 @@
       <div class="card">
         <h3>What this means — and what it doesn't</h3>
         <ul class="v-notes">
+          ${N ? `<li><b>Averaging beats picking.</b> The rank-averaged ensemble (${N.ensemble.auroc.toFixed(2)}) outperforms choosing one configuration by inner cross-validation (${N.auroc.toFixed(2)}): with 4 people, which single model "wins" is mostly luck, while the average is stable. The ensemble design was chosen after runs 1–3, so treat it as promising rather than proven.</li>` : ''}
           <li><b>A supervised spaceflight signature works better than outlier counting.</b> Learning which lab values move together after flight (on the other three crew) picked out R+1 for 3 of 4 people. Counting individual outliers did not.</li>
           <li><b>The research cytokine panel added noise.</b> Restricting to standard blood count and metabolic values (what an on-board analyzer measures) improved the supervised models; run 3 was chosen after seeing runs 1–2, so its score is optimistic.</li>
-          <li><b>The learned threshold is not ready for alarms.</b> At the threshold learned on the other crew, sensitivity is 0–25%: the models rank R+1 well but scores are not yet calibrated across people.</li>
+          <li><b>Alarms need per-person calibration.</b> A threshold learned on other crew catches 0–25% of R+1 draws. Comparing each post-flight score with the person's own preflight scores does better (nested model: ${N ? Math.round(N.personal.sensitivity * 100) + '% sensitivity, ' + Math.round(N.personal.specificity * 100) + '% specificity' : 'see report'}), but is still far from flight-ready.</li>
           <li><b>This is 4 people and a 3-day flight.</b> No result here is statistically robust after correcting for multiple comparisons. Long-duration data (e.g. NASA's Twins Study, ISS crews) is available only by application.</li>
           <li><b>Wearable indicators are not validated here.</b> No open in-flight heart-rate, sleep or PVT data exists for astronauts, so those parts of HELIOS remain tested on simulated data only.</li>
         </ul>
         <p class="muted small">Data: NASA Open Science Data Repository — ${V.dataset.studies.map((s) => `${s.label} (${s.osd})`).join(', ')}. Reproduce with <code>node tools/evaluate.js</code>.</p>
       </div>`;
+  }
+
+  // ---------- command palette ----------
+  const palette = { open: false, q: '', i: 0 };
+  function commands() {
+    const list = NAV.map((n) => ({ label: `Go to ${n.label}`, hint: 'Navigate', run: () => go(n.id) }));
+    H.INDICATORS.concat(H.ENV_INDICATORS).forEach((ind) => list.push({ label: `Trend: ${ind.name}`, hint: 'Indicator', run: () => {
+      ui.domain = ind.domain || 'env'; ui.ind = ind.id; go('trends');
+    } }));
+    H.PROTOCOLS.forEach((p) => list.push({ label: `${p.id} ${p.title}`, hint: 'Protocol', run: () => { ui.protocol = p.id; go('protocols'); } }));
+    H.CREW.forEach((c) => list.push({ label: `Switch to ${c.name}`, hint: c.role, run: () => { ui.crewId = c.id; go('overview'); } }));
+    list.push({ label: 'Play voice briefing', hint: 'Action', run: speak });
+    list.push({ label: 'Toggle sleep-period display', hint: 'Action', run: () => $('[data-action="night"]').click() });
+    list.push({ label: 'Start alertness test', hint: 'Action', run: () => { go('pvt'); pvtStart(); } });
+    list.push({ label: 'Queue downlink report', hint: 'Action', run: () => { go('report'); $('[data-action="queue"]').click(); } });
+    return list;
+  }
+  function paletteMatches() {
+    const norm = (x) => x.normalize('NFKC').toLowerCase();
+    const q = norm(palette.q.trim());
+    const all = commands();
+    if (!q) return all.slice(0, 9);
+    return all.filter((c) => q.split(/\s+/).every((w) => norm(c.label + ' ' + c.hint).includes(w))).slice(0, 9);
+  }
+  function renderPalette() {
+    const el = $('#palette');
+    if (!palette.open) { el.hidden = true; el.innerHTML = ''; return; }
+    const items = paletteMatches();
+    palette.i = Math.min(palette.i, Math.max(0, items.length - 1));
+    const listHtml = items.length ? items.map((c, i) => `<li role="option" aria-selected="${i === palette.i}" class="${i === palette.i ? 'sel' : ''}" data-pi="${i}"><span>${esc(c.label)}</span><small>${esc(c.hint)}</small></li>`).join('') : '<li class="none">No matching command</li>';
+    if (el.hidden || !$('#pal-input')) {
+      el.hidden = false;
+      el.innerHTML = `<div class="pal-box" role="dialog" aria-label="Command palette">
+        <div class="pal-in">${ICON.search}<input id="pal-input" placeholder="Search views, indicators, protocols, crew…" autocomplete="off" aria-label="Search commands"><kbd>esc</kbd></div>
+        <ul class="pal-list" role="listbox"></ul></div>`;
+      const inp = $('#pal-input');
+      inp.value = palette.q;
+      inp.addEventListener('input', () => { palette.q = inp.value; palette.i = 0; renderPalette(); });
+      inp.focus();
+    }
+    $('.pal-list').innerHTML = listHtml;
+  }
+  function openPalette() { palette.open = true; palette.q = ''; palette.i = 0; renderPalette(); }
+  function closePalette() { palette.open = false; renderPalette(); }
+  function runPalette(i) {
+    const c = paletteMatches()[i];
+    closePalette();
+    if (c) c.run();
+  }
+
+  function animateIn() {
+    if (H.cosmos && H.cosmos.reduced) return;
+    const v = $('#view');
+    v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter');
+    document.querySelectorAll('[data-count]').forEach((el) => {
+      const target = +el.dataset.count, t0 = performance.now();
+      const tick = (t) => {
+        const k = Math.min(1, (t - t0) / 1100), e = 1 - (1 - k) ** 3;
+        el.textContent = Math.round(target * e);
+        if (k < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
   }
 
   // ---------- interactions ----------
@@ -854,6 +1030,7 @@
     else if (act === 'night') {
       document.body.classList.toggle('night');
       try { localStorage.setItem('helios.night', document.body.classList.contains('night') ? '1' : '0'); } catch (err) { /* ignore */ }
+      if (H.redrawStars) H.redrawStars();
       render();
     }
     else if (act === 'ack') {
@@ -901,6 +1078,8 @@
       setTimeout(() => URL.revokeObjectURL(link.href), 1000);
     }
     else if (act === 'print') window.print();
+    else if (act === 'brief') speak();
+    else if (act === 'palette') openPalette();
     else if (act === 'vrun') { ui.vrun = el.dataset.id; render(); }
     else if (act === 'vmethod') { ui.vmethod = el.dataset.id; render(); }
   });
@@ -926,10 +1105,27 @@
     if (e.target.id === 'checkin-form') { e.preventDefault(); submitCheckin(e.target); }
   });
 
+  document.addEventListener('mousedown', (e) => {
+    if (!palette.open) return;
+    const li = e.target.closest('[data-pi]');
+    if (li) { e.preventDefault(); runPalette(+li.dataset.pi); }
+    else if (!e.target.closest('.pal-box')) closePalette();
+  });
   document.addEventListener('pointerdown', (e) => {
     if (ui.view === 'pvt' && e.target.closest('#pvt-box') && !e.target.closest('button')) { e.preventDefault(); pvtRespond(); }
   });
   document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); palette.open ? closePalette() : openPalette(); return; }
+    if (palette.open) {
+      const n = paletteMatches().length;
+      if (e.key === 'Escape') { e.preventDefault(); closePalette(); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); palette.i = (palette.i + 1) % Math.max(1, n); renderPalette(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); palette.i = (palette.i - 1 + n) % Math.max(1, n); renderPalette(); }
+      else if (e.key === 'Enter') { e.preventDefault(); runPalette(palette.i); }
+      return;
+    }
+    if (e.key === 'Enter' && e.target.matches && e.target.matches('g.spot')) { e.target.dispatchEvent(new MouseEvent('click', { bubbles: true })); return; }
+    if (e.key === '/' && !e.target.closest('input, textarea, select')) { e.preventDefault(); openPalette(); return; }
     if (ui.view === 'pvt' && e.code === 'Space' && pvt.state !== 'idle' && pvt.state !== 'done') { e.preventDefault(); pvtRespond(); }
   });
 
@@ -945,6 +1141,20 @@
   const initial = location.hash.slice(1);
   if (NAV.some((n) => n.id === initial)) ui.view = initial;
   recompute();
+  if (H.cosmos) H.cosmos.starfield($('#stars'));
+  const nominal = H.CREW.filter((c) => A[c.id].overall === 0).length;
+  const bootEl = $('#boot');
+  if (bootEl && H.cosmos) {
+    H.cosmos.boot(bootEl, [
+      ['Bio-harness telemetry', `${H.CREW.length} crew linked`],
+      ['Actigraphy & sleep', 'synced'],
+      ['Personal dosimeters', `${H.fmt(A.nakamura.inds.dose.current, 2)} mSv/day`],
+      ['Cabin atmosphere', `CO₂ ${H.fmt(A.nakamura.env.co2.current, 2)} mmHg`],
+      ['Personal baselines', `${H.INDICATORS.length} indicators`],
+      ['Assessment engine', `${nominal}/${H.CREW.length} crew nominal`],
+      ['Earth link', `${Math.floor(M.lightTimeSec / 60)}m ${pad2(M.lightTimeSec % 60)}s one-way`],
+    ], () => {});
+  }
   render();
   setInterval(tickClock, 1000);
 })(window.H);

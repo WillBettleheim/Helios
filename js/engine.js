@@ -176,9 +176,19 @@ window.H = window.H || {};
         actions: ['Restore ~2 h/day of countermeasure exercise', 'Prioritize heavy squats and deadlifts', 'Ask the commander to protect exercise time'] });
     }
 
+    const nut = Math.max(S('mass'), S('fluid'), S('kcal'));
+    if (nut > 0) {
+      add({ id: 'nutrition', domain: 'nutrition', level: nut,
+        title: S('fluid') > 0 ? 'Drinking less than your normal' : 'Eating less than your normal',
+        summary: (S('fluid') > 0 ? 'Fluid intake has dropped. ' : '') + (S('kcal') > 0 || S('mass') > 0 ? 'Energy intake or body mass is falling. ' : '') +
+          'Under-eating and under-drinking are common in flight and speed up bone loss, raise kidney-stone risk and blunt performance.',
+        evidence: ev('mass', 'fluid', 'kcal'), protocol: 'P-NUT-01', escalate: nut >= 2 ? 1 : 0,
+        actions: ['Drink at least 2.5 L today', 'Eat full menu portions plus a snack', 'Weigh in daily at the same time'] });
+    }
+
     if (S('uca') > 0) {
       add({ id: 'renal', domain: 'msk', level: S('uca'), title: 'Kidney-stone risk rising',
-        summary: 'Calcium released from bone is being excreted in urine, which raises kidney-stone risk.',
+        summary: 'Calcium released from bone is being excreted in urine, which raises kidney-stone risk.' + (S('fluid') > 0 ? ' Low fluid intake makes it worse.' : ''),
         evidence: ev('uca'), protocol: 'P-REN-01', escalate: 1,
         actions: ['Drink at least 2.5 L/day', 'Limit sodium', 'Repeat urine sample in 3 days'] });
     }

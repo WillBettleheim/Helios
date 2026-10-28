@@ -8,6 +8,18 @@ window.H = window.H || {};
 
   H.PROTOCOLS = [
     {
+      id: 'P-NUT-01', domain: 'nutrition', title: 'Nutrition & hydration recovery', duration: '7 days',
+      when: 'Fluid or energy intake below your normal, or body mass falling.',
+      steps: [
+        'Set a fluid target of at least 2.5 L/day; log every drink pouch.',
+        'Eat full menu portions; add one calorie-dense snack per day.',
+        'Weigh in daily, same time, before eating.',
+        'Choose low-sodium items to protect bone and kidneys.',
+        'Review intake with the CMO after 7 days.',
+      ],
+      escalateIf: ['Body mass down more than 5% from preflight', 'Persistent loss of appetite or nausea'],
+    },
+    {
       id: 'P-RAD-01', domain: 'rad', title: 'Solar particle event — shelter', duration: 'Until all-clear (typically 12–48 h)',
       when: 'Personal dosimeter or vehicle alarm shows dose rate above 3 mSv/day, or SPE warning from ground.',
       steps: [

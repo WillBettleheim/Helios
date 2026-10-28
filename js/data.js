@@ -35,6 +35,8 @@ window.H = window.H || {};
       risk: 'Isolation, confinement and circadian disruption degrade sleep, mood and cognitive performance.' },
     { id: 'sans', name: 'Neuro-ocular', icon: 'eye',
       risk: 'Spaceflight-associated neuro-ocular syndrome (SANS): optic disc edema, globe flattening and vision change.' },
+    { id: 'nutrition', name: 'Nutrition & Hydration', icon: 'drop',
+      risk: 'Astronauts often under-eat and under-drink in flight, which accelerates bone and muscle loss and raises kidney-stone risk.' },
   ];
 
   /*
@@ -94,6 +96,15 @@ window.H = window.H || {};
       base: [0.5, 0.7], useZ: false, cadence: 1, derived: true, window: 1, src: 'Daily check-in', limits: { monitor: 3, action: 5 } },
   ];
 
+  INDICATORS.push(
+    { id: 'mass', domain: 'nutrition', name: 'Body mass', short: 'Body mass', unit: 'kg', dec: 1, bad: 'down',
+      base: [72, 0.8], cadence: 1, src: 'Mass measurement device' },
+    { id: 'fluid', domain: 'nutrition', name: 'Fluid intake', short: 'Fluid', unit: 'L/day', dec: 1, bad: 'down',
+      base: [2.6, 0.3], cadence: 1, clamp: [0, 8], src: 'Water dispenser log', limits: { monitor: 2.0, action: 1.5 } },
+    { id: 'kcal', domain: 'nutrition', name: 'Energy intake', short: 'Energy', unit: 'kcal/day', dec: 0, bad: 'down',
+      base: [2900, 220], cadence: 1, step: 10, src: 'Food barcode log', limits: { monitor: 2300, action: 1900 } },
+  );
+
   const ENV_INDICATORS = [
     { id: 'co2', name: 'Cabin ppCO₂', short: 'CO₂', unit: 'mmHg', dec: 2, bad: 'up', base: [2.2, 0.15], useZ: false,
       cadence: 1, src: 'Major constituent analyzer', limits: { monitor: 3.0, action: 4.0, urgent: 6.0 } },
@@ -130,6 +141,7 @@ window.H = window.H || {};
       exer: [{ shape: 'ramp', from: 126, to: 147, delta: -50 }],
       bmd: [{ shape: 'ramp', from: 105, to: 147, delta: -1.1 }],
       uca: [{ shape: 'ramp', from: 110, to: 147, delta: 55 }],
+      fluid: [{ shape: 'ramp', from: 118, to: 147, delta: -0.75 }],
     },
     reyes: {
       hrv: [{ shape: 'ramp', from: 96, to: 147, delta: -15 }],
@@ -145,6 +157,8 @@ window.H = window.H || {};
       crp: [{ shape: 'ramp', from: 126, to: 147, delta: 2.6 }],
       temp: [{ shape: 'ramp', from: 140, to: 147, delta: 0.5 }],
       mood: [{ shape: 'ramp', from: 125, to: 147, delta: -0.8 }],
+      kcal: [{ shape: 'ramp', from: 128, to: 147, delta: -520 }],
+      mass: [{ shape: 'ramp', from: 128, to: 147, delta: -1.4 }],
     },
   };
 
@@ -225,10 +239,7 @@ window.H = window.H || {};
       if (checkin) {
         series.mood[D] = checkin.mood;
         series.stress[D] = checkin.stress;
-        const v = checkin.vitals || {};
-        if (v.rhr) series.rhr[D] = v.rhr;
-        if (v.sbp) series.sbp[D] = v.sbp;
-        if (v.temp) series.temp[D] = v.temp;
+        Object.entries(checkin.vitals || {}).forEach(([id, x]) => { if (x != null && series[id] && !INDICATORS.find((i) => i.id === id).derived) series[id][D] = x; });
       }
       const tests = ((store.pvt || {})[c.id] || []).filter((t) => t.day === D);
       if (tests.length) series.pvt[D] = tests[tests.length - 1].mean;

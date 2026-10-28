@@ -66,7 +66,7 @@ window.H = window.H || {};
           <tbody>${items.map((i, k) => { const s = status(i); return `<tr>
             <td><b>${esc(i.name)}</b>${i.rad ? ' <span title="Radiation-sensitive" class="rad">☢</span>' : ''}${i.rx ? ' <span class="tag">Rx · CMO</span>' : ''}</td>
             <td class="muted">${esc(i.use)}</td>
-            <td class="mono">${i.qty}<small class="muted"> / ${i.start}</small><span class="stock"><i style="width:${(i.qty / i.start) * 100}%"></i></span></td>
+            <td class="mono">${+i.qty}<small class="muted"> / ${+i.start}</small><span class="stock"><i style="width:${(+i.qty / +i.start) * 100}%"></i></span></td>
             <td>${app.pill(s.level, s.label)}</td>
             <td class="right"><button class="btn sm" data-action="med-take" data-k="${k}" ${i.qty ? '' : 'disabled'}>${T('Use 1')}</button></td></tr>`; }).join('')}</tbody>
         </table>
@@ -81,6 +81,7 @@ window.H = window.H || {};
     if (!i || !i.qty) return;
     if (i.rx && !window.confirm(`${i.name} is prescription-only. Has the CMO approved this dose?`)) return;
     i.qty--;
+    i.updated = Date.now();
     meds(app.ui.crewId).push({ name: i.name, day: app.M.day, t: Date.now() });
     app.log(`Medication: ${i.name}`, 'medication');
     app.toast(`${i.name} logged. ${i.qty} left.`);

@@ -32,7 +32,11 @@ window.H = window.H || {};
       return document.body.classList.contains('night') ? [255, 120, 100] : [205, 225, 255];
     }
 
+    let lastFrame = 0;
     function draw(t) {
+      // 30 fps is plenty for drifting stars and halves the work under the glass panels.
+      if (!reduced && t - lastFrame < 33) { raf = requestAnimationFrame(draw); return; }
+      lastFrame = t;
       const [r, g, b] = tint();
       ctx.clearRect(0, 0, w, h);
       for (const s of stars) {

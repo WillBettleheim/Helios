@@ -109,7 +109,7 @@ window.H = window.H || {};
       const px = X(best[0]), py = Y(best[1]);
       cross.setAttribute('x1', px); cross.setAttribute('x2', px); cross.style.display = '';
       cp.setAttribute('cx', px); cp.setAttribute('cy', py); cp.style.display = '';
-      const date = H.dayToDate(best[0]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+      const date = (o.dateOf || H.dayToDate)(best[0]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
       const base = o.center ? `<span>baseline ${f(o.center(best[0]))}</span>` : '';
       tip.innerHTML = `<b>${f(best[1])} ${o.unit}</b><span>Mission day ${best[0]} · ${date}</span>${base}`;
       tip.style.display = '';

@@ -259,11 +259,68 @@ window.H = window.H || {};
     return { env, crew };
   }
 
-  function dayToDate(d) {
-    const t = new Date(MISSION.startISO + 'T00:00:00Z');
+  function dayToDate(d, startISO) {
+    const t = new Date((startISO || MISSION.startISO) + 'T00:00:00Z');
     t.setUTCDate(t.getUTCDate() + d - 1);
     return t;
   }
 
-  Object.assign(H, { MISSION, DOMAINS, INDICATORS, ENV_INDICATORS, CREW, buildDataset, dayToDate });
+  // ---------- personal profile: the astronaut's own data ----------
+  const isoToday = () => { const n = new Date(); return new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate())); };
+  function dayOf(dateISO, startISO) {
+    return Math.round((new Date(dateISO + 'T00:00:00Z') - new Date(startISO + 'T00:00:00Z')) / 864e5) + 1;
+  }
+  function personalDay(profile) {
+    return Math.max(1, Math.round((isoToday() - new Date(profile.start + 'T00:00:00Z')) / 864e5) + 1);
+  }
+  // Indicators a person can log or import directly (derived ones are computed).
+  const LOGGABLE = INDICATORS.filter((i) => !i.derived).map((i) => i.id);
+
+  /*
+   * Turns everything the person has entered — imported records, daily check-ins and
+   * alertness tests — into the same per-day series the simulated crew use.
+   * Records dated before the mission start are kept apart as preflight baseline data.
+   */
+  function buildPersonal(profile, store) {
+    const day = personalDay(profile);
+    const series = {}, pre = {};
+    INDICATORS.forEach((ind) => { series[ind.id] = new Array(day + 1).fill(null); });
+
+    const records = (store.personal && store.personal.records) || {};
+    Object.keys(records).sort().forEach((date) => {
+      const d = dayOf(date, profile.start);
+      Object.entries(records[date]).forEach(([id, v]) => {
+        if (!LOGGABLE.includes(id) || !Number.isFinite(v)) return;
+        if (d < 1) (pre[id] = pre[id] || []).push(v);
+        else if (d <= day) series[id][d] = v;
+      });
+    });
+
+    const checkins = (store.checkins || {}).me || {};
+    const ha = new Array(day + 1).fill(null);
+    Object.entries(checkins).forEach(([k, ci]) => {
+      const d = +k;
+      if (d < 1 || d > day) return;
+      if (ci.mood != null) series.mood[d] = ci.mood;
+      if (ci.stress != null) series.stress[d] = ci.stress;
+      Object.entries(ci.vitals || {}).forEach(([id, v]) => { if (v != null && series[id]) series[id][d] = v; });
+      ha[d] = ci.symptoms.includes('headache') ? 1 : 0;
+    });
+    ((store.pvt || {}).me || []).forEach((t) => { if (t.day >= 1 && t.day <= day) series.pvt[t.day] = t.mean; });
+
+    // Career dose only when the person logs dosimeter readings.
+    if (series.dose.some((v) => v != null)) {
+      let cum = +profile.priorDose || 0;
+      for (let d = 1; d <= day; d++) { cum += series.dose[d] ?? 0; series.cumdose[d] = cum; }
+    }
+    // Headache days need at least one check-in in the 7-day window.
+    for (let d = 1; d <= day; d++) {
+      const win = ha.slice(Math.max(1, d - 6), d + 1);
+      if (win.some((v) => v != null)) series.headache[d] = win.reduce((s, v) => s + (v || 0), 0);
+    }
+    const doses = series.dose.slice(Math.max(1, day - 30)).filter((v) => v != null && v < 3);
+    return { series, pre, offsets: {}, headacheDaily: ha, doseRate: median(doses) || 0, day };
+  }
+
+  Object.assign(H, { MISSION, DOMAINS, INDICATORS, ENV_INDICATORS, CREW, LOGGABLE, buildDataset, buildPersonal, personalDay, dayOf, dayToDate });
 })(window.H);

@@ -46,23 +46,35 @@
     sun: P('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
     lock: P('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/>'),
     check: P('<path d="M5 12l5 5L20 7"/>'),
+    drop: P('<path d="M12 3s6 6.5 6 11a6 6 0 01-12 0c0-4.5 6-11 6-11z"/>'),
     speaker: P('<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 010 7M19 6a8.5 8.5 0 010 12"/>'),
     stop: P('<rect x="6" y="6" width="12" height="12" rx="2"/>'),
     search: P('<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>'),
     arrow: P('<path d="M5 12h14M13 6l6 6-6 6"/>'),
   };
 
+  // Navigation, grouped. `mobile` items sit in the phone tab bar; the rest live under "More".
+  const NAV_GROUPS = [['monitor', 'Monitor'], ['daily', 'Daily'], ['act', 'Act'], ['ground', 'Crew & ground'], ['me', 'You']];
   const NAV = [
-    { id: 'overview', label: 'My health', short: 'Health' },
-    { id: 'trends', label: 'Trends' },
-    { id: 'checkin', label: 'Daily check-in', short: 'Check-in' },
-    { id: 'pvt', label: 'Alertness test', short: 'PVT' },
-    { id: 'protocols', label: 'Protocols' },
-    { id: 'report', label: 'Downlink report', short: 'Report' },
-    { id: 'crew', label: 'Crew (CMO)', short: 'Crew' },
-    { id: 'validation', label: 'Model validation', short: 'Validate' },
-    { id: 'profile', label: 'My profile', short: 'Profile' },
+    { id: 'overview', label: 'My health', short: 'Health', group: 'monitor', mobile: true },
+    { id: 'trends', label: 'Trends', group: 'monitor', mobile: true },
+    { id: 'checkin', label: 'Daily check-in', short: 'Check-in', group: 'daily', mobile: true },
+    { id: 'pvt', label: 'Alertness test', short: 'PVT', group: 'daily' },
+    { id: 'protocols', label: 'Protocols', group: 'act', mobile: true },
+    { id: 'report', label: 'Downlink report', short: 'Report', group: 'ground' },
+    { id: 'crew', label: 'Crew (CMO)', short: 'Crew', group: 'ground' },
+    { id: 'validation', label: 'Model validation', short: 'Validate', group: 'ground' },
+    { id: 'profile', label: 'My profile', short: 'Profile', group: 'me' },
   ];
+  const EXTRA_VIEWS = {};   // views registered by feature modules
+  const T = (str) => (H.t ? H.t(str) : str);
+  // Tiny event bus so feature modules can react to app events without touching this file.
+  const handlers = {};
+  H.bus = {
+    on(ev, fn) { (handlers[ev] = handlers[ev] || []).push(fn); },
+    emit(ev, ...args) { return (handlers[ev] || []).map((fn) => fn(...args)); },
+  };
+  const slot = (name, ...args) => H.bus.emit('slot:' + name, ...args).filter(Boolean).join('');
 
   const SYMPTOMS = [
     ['headache', 'Headache'], ['vision', 'Vision change / blur'], ['congestion', 'Congestion / sinus pressure'],
@@ -148,24 +160,40 @@
   // ---------- shell ----------
   function renderNav() {
     const a = me();
-    $('#nav').innerHTML = NAV.map((n) => {
+    const item = (n) => {
       let badge = '';
       if (n.id === 'checkin' && !todayCheckin(ui.crewId)) badge = '<span class="badge">Due</span>';
       if (n.id === 'pvt' && !pvtTests(ui.crewId).some((t) => t.day === M.day)) badge = '<span class="badge">Due</span>';
       if (n.id === 'overview' && a.insights.length) badge = `<span class="badge lvl-${lv(a.overall)}">${a.insights.length}</span>`;
       if (n.id === 'report' && store.queue.length) badge = `<span class="badge">${store.queue.length}</span>`;
-      return `<a href="#${n.id}" class="nav-item ${ui.view === n.id ? 'active' : ''}" data-action="nav" data-view="${n.id}" ${ui.view === n.id ? 'aria-current="page"' : ''}>${ICON[n.id]}<span class="nl">${n.label}</span><span class="ns">${n.short || n.label}</span>${badge}</a>`;
-    }).join('');
+      if (n.badge) badge = n.badge() || badge;
+      return `<a href="#${n.id}" class="nav-item ${ui.view === n.id ? 'active' : ''} ${n.mobile ? 'm-show' : ''}" data-action="nav" data-view="${n.id}" ${ui.view === n.id ? 'aria-current="page"' : ''}>${ICON[n.icon || n.id] || ICON.overview}<span class="nl">${T(n.label)}</span><span class="ns">${T(n.short || n.label)}</span>${badge}</a>`;
+    };
+    const moreActive = !NAV.find((n) => n.id === ui.view && n.mobile);
+    $('#nav').innerHTML = NAV_GROUPS.map(([g, label]) => {
+      const items = NAV.filter((n) => n.group === g);
+      return items.length ? `<div class="nav-group"><span class="nav-gl">${T(label)}</span>${items.map(item).join('')}</div>` : '';
+    }).join('') + `<button class="nav-item more-btn ${moreActive ? 'active' : ''}" data-action="more" aria-label="${T('More')}">${ICON.overview}<span class="ns">${T('More')}</span></button>`;
   }
+
+  function openMore() {
+    const el = $('#more-sheet');
+    el.hidden = false;
+    el.innerHTML = `<div class="sheet" role="dialog" aria-label="${T('All sections')}">
+      <div class="sheet-head"><b>${T('All sections')}</b><button class="icon-btn" data-action="close-more" aria-label="Close">✕</button></div>
+      ${NAV_GROUPS.map(([g, label]) => `<div class="sheet-group"><span class="nav-gl">${T(label)}</span><div class="sheet-grid">${NAV.filter((n) => n.group === g).map((n) => `<button data-action="nav" data-view="${n.id}" class="${ui.view === n.id ? 'active' : ''}">${ICON[n.icon || n.id] || ICON.overview}<span>${T(n.label)}</span></button>`).join('')}</div></div>`).join('')}
+    </div>`;
+  }
+  function closeMore() { const el = $('#more-sheet'); if (el) { el.hidden = true; el.innerHTML = ''; } }
 
   function renderTopbar() {
     const c = me().crew;
     $('#topbar').innerHTML = `
       <div class="tb-stats">
-        <div class="tb-stat"><span class="k">Mission day</span><span class="v mono">${M.day}<small> / ${M.plannedDays}</small></span></div>
+        <div class="tb-stat"><span class="k">${T('Mission day')}</span><span class="v mono">${M.day}<small> / ${M.plannedDays}</small></span></div>
         <div class="tb-stat hide-sm"><span class="k">MET</span><span class="v mono" id="met">—</span></div>
         <div class="tb-stat hide-sm hide-md"><span class="k">Earth delay (one-way)</span><span class="v mono">${Math.floor(M.lightTimeSec / 60)}m ${pad2(M.lightTimeSec % 60)}s</span></div>
-        <div class="tb-stat"><span class="k">Next downlink</span><span class="v mono" id="aos">—</span></div>
+        <div class="tb-stat"><span class="k">${T('Next downlink')}</span><span class="v mono" id="aos">—</span></div>
       </div>
       <div class="tb-right">
         <label class="crew-select">
@@ -181,12 +209,16 @@
 
   function render() {
     if (ui.view !== 'pvt') pvtAbort();
+    H.bus.emit('leave', ui.view);
+    closeMore();
     renderNav();
     renderTopbar();
     const v = $('#view');
     const views = { overview: vOverview, trends: vTrends, checkin: vCheckin, pvt: vPvt, protocols: vProtocols, report: vReport, crew: vCrew, validation: vValidation, profile: vProfile };
-    v.innerHTML = (views[ui.view] || vOverview)();
+    const extra = EXTRA_VIEWS[ui.view];
+    v.innerHTML = extra ? extra.render() : (views[ui.view] || vOverview)();
     if (ui.view === 'trends') mountTrendChart();
+    if (extra && extra.mount) extra.mount(v);
     animateIn();
   }
 
@@ -240,7 +272,7 @@
     </div>`;
   }
 
-  const BODY_SPOTS = { behav: [86, 30], sans: [113, 42], cardio: [111, 104], immune: [84, 130], msk: [100, 190], rad: [158, 66] };
+  const BODY_SPOTS = { behav: [86, 30], sans: [113, 42], cardio: [111, 104], immune: [84, 130], msk: [100, 190], rad: [158, 66], nutrition: [114, 152] };
   function bodyMap(a) {
     const spots = a.domains.map((d) => {
       const [x, y] = BODY_SPOTS[d.id];
@@ -327,36 +359,38 @@
     return `
       ${viewingOther ? `<div class="banner">${ICON.lock}<span>Viewing <b>${esc(c.name)}</b>'s record as Crew Medical Officer. Private behavioral entries are hidden unless shared.</span></div>` : ''}
       ${!store.profile ? `<div class="banner cta">${ICON.profile}<span><b>This is demo data.</b> Set up your profile and HELIOS will learn your personal baselines from your own readings.</span><button class="btn sm primary" data-action="nav" data-view="profile">Make it mine ${ICON.arrow}</button></div>` : ''}
+      ${slot('overview-top', a)}
       <section class="mission-banner">${trajectory()}</section>
       <section class="hero lvl-${lv(a.overall)}">
         ${ring(a.readiness, a.overall)}
         <div class="hero-text">
           <p class="eyebrow">${viewingOther ? esc(c.role) : `${greet}, ${esc(c.first)}`} · Mission day ${M.day}</p>
-          <h1>${HEADLINE[a.overall]}</h1>
+          <h1>${T(HEADLINE[a.overall])}</h1>
           <p class="lede">${counts.length ? counts.map(([l, n]) => `<b class="t-${lv(l)}">${n} ${H.LEVEL_LABEL[l].toLowerCase()}</b>`).join(' · ') + ` finding${a.insights.length > 1 ? 's' : ''} from ${H.INDICATORS.length} indicators, compared with your own preflight baseline.` : `${H.INDICATORS.length} indicators checked against your own preflight baseline.`}</p>
           <div class="hero-actions">
-            ${ci ? `<span class="done">${ICON.check} Check-in done</span>` : `<button class="btn primary" data-action="nav" data-view="checkin">Start daily check-in ${ICON.arrow}</button>`}
-            ${pvtDone ? `<span class="done">${ICON.check} Alertness test done</span>` : `<button class="btn" data-action="nav" data-view="pvt">Take alertness test</button>`}
-            <button class="btn ghost" data-action="brief">${ICON.speaker} Voice briefing</button>
+            ${ci ? `<span class="done">${ICON.check} Check-in done</span>` : `<button class="btn primary" data-action="nav" data-view="checkin">${T('Start daily check-in')} ${ICON.arrow}</button>`}
+            ${pvtDone ? `<span class="done">${ICON.check} Alertness test done</span>` : `<button class="btn" data-action="nav" data-view="pvt">${T('Take alertness test')}</button>`}
+            <button class="btn ghost" data-action="brief">${ICON.speaker} ${T('Voice briefing')}</button>
           </div>
         </div>
       </section>
 
       <div class="grid-main">
         <div class="col">
-          <h2 class="section-title">Health domains</h2>
+          <h2 class="section-title">${T('Health domains')}</h2>
           <div class="domain-grid">${domainCards}</div>
-          <h2 class="section-title">What needs your attention</h2>
+          <h2 class="section-title">${T('What needs your attention')}</h2>
           <div class="insights">${insights}</div>
         </div>
         <aside class="col side">
+          ${slot('overview-side-top', a)}
           ${c.personal ? adaptCard(a) : ''}
           <div class="card body-card">
-            <h3>Body status</h3>
+            <h3>${T('Body status')}</h3>
             ${bodyMap(a)}
           </div>
           <div class="card">
-            <h3>Today</h3>
+            <h3>${T('Today')}</h3>
             <ul class="tasks">
               <li class="${ci ? 'ok' : ''}">${ci ? ICON.check : '<i class="todo"></i>'}<span>Daily check-in</span><small>${ci ? 'Submitted' : '2 min'}</small></li>
               <li class="${pvtDone ? 'ok' : ''}">${pvtDone ? ICON.check : '<i class="todo"></i>'}<span>Alertness test (PVT-B)</span><small>${pvtDone ? 'Done' : '1–3 min'}</small></li>
@@ -556,6 +590,7 @@
             <div class="field"><label for="f-exer">Exercise <small>min</small></label><input id="f-exer" name="exer" type="number" min="0" max="600" inputmode="numeric" value="${v.vitals.exer ?? ''}"></div>` : ''}
           </div>
         </fieldset>
+        ${slot('checkin-fields', c, v)}
         <fieldset>
           <legend>Anything else?</legend>
           <textarea name="notes" rows="3" placeholder="Optional note for your record">${esc(v.notes)}</textarea>
@@ -580,6 +615,7 @@
       symptoms: fd.getAll('symptoms'), vitals: { rhr: num('rhr'), sbp: num('sbp'), temp: num('temp'), sleep: num('sleep'), hrv: num('hrv'), exer: num('exer') },
       notes: String(fd.get('notes') || '').slice(0, 1000), share: fd.get('share'), t: Date.now(),
     };
+    H.bus.emit('checkin-submit', entry, fd);
     (store.checkins[ui.crewId] = store.checkins[ui.crewId] || {})[M.day] = entry;
     log(`Daily check-in submitted${entry.symptoms.length ? ` — symptoms: ${entry.symptoms.map((s) => SYMPTOMS.find((x) => x[0] === s)[1]).join(', ')}` : ''}`, 'checkin');
     recompute();
@@ -771,6 +807,7 @@
           <div class="proto-meta"><div><span class="k">Use when</span><p>${esc(p.when)}</p></div><div><span class="k">Duration</span><p>${esc(p.duration)}</p></div></div>
           <ol class="steps">${p.steps.map((s, i) => `<li class="${done.includes(i) ? 'done' : ''}"><label><input type="checkbox" data-change="step" data-id="${p.id}" data-i="${i}" ${done.includes(i) ? 'checked' : ''}><span>${esc(s)}</span></label></li>`).join('')}</ol>
           <div class="progress"><div style="width:${(done.length / p.steps.length) * 100}%"></div></div>
+          ${slot('protocol-detail', p)}
           <div class="escalate"><span class="k">Escalate to the CMO immediately if</span><ul>${p.escalateIf.map((e) => `<li>${esc(e)}</li>`).join('')}</ul></div>
           <div class="form-foot">
             <button class="btn" data-action="reset-steps" data-id="${p.id}">Reset</button>
@@ -1075,6 +1112,7 @@
         </table>
         <p class="muted small">Preflight readings are used first. Without them HELIOS learns from your first 7 readings, then adapts slowly using readings more than 14 days old (30-day half-life), skipping outliers. The spread is blended with the population reference so a few readings can't make the band unrealistically tight.</p>
       </div>
+      ${slot('profile-bottom')}
       <div class="danger"><button class="btn sm ghost" data-action="delete-me">Delete my profile and data</button></div>`;
   }
 
@@ -1273,6 +1311,7 @@
       const p = H.PROTOCOLS.find((x) => x.id === el.dataset.id);
       const n = ((store.steps[ui.crewId] || {})[p.id] || []).length;
       log(`${p.id} ${p.title}: ${n}/${p.steps.length} steps completed`, 'protocol');
+      H.bus.emit('protocol-complete', { protocol: p, steps: n, crewId: ui.crewId, day: M.day, a: me(), series: ds.crew[ui.crewId].series });
       toast(`Logged ${p.id}: ${n} of ${p.steps.length} steps.`);
       render();
     }
@@ -1297,6 +1336,8 @@
     }
     else if (act === 'print') window.print();
     else if (act === 'brief') speak();
+    else if (act === 'more') openMore();
+    else if (act === 'close-more') closeMore();
     else if (act === 'edit-profile') { ui.editProfile = true; render(); }
     else if (act === 'cancel-profile') { ui.editProfile = false; render(); }
     else if (act === 'sensitivity') {
@@ -1326,10 +1367,12 @@
     else if (act === 'palette') openPalette();
     else if (act === 'vrun') { ui.vrun = el.dataset.id; render(); }
     else if (act === 'vmethod') { ui.vmethod = el.dataset.id; render(); }
+    else H.bus.emit('action:' + act, el, e);
   });
 
   document.addEventListener('change', (e) => {
     const el = e.target;
+    if (el.dataset.change && el.dataset.change !== 'crew' && el.dataset.change !== 'step' && !el.dataset.change.startsWith('import-')) H.bus.emit('change:' + el.dataset.change, el, e);
     if (el.dataset.change === 'crew') { ui.crewId = el.value; render(); }
     else if (el.dataset.change === 'import-csv' || el.dataset.change === 'import-json') {
       const f = el.files && el.files[0];
@@ -1365,6 +1408,7 @@
   document.addEventListener('submit', (e) => {
     if (e.target.id === 'checkin-form') { e.preventDefault(); submitCheckin(e.target); }
     if (e.target.id === 'profile-form') { e.preventDefault(); submitProfile(e.target); }
+    else if (e.target.id && !['checkin-form'].includes(e.target.id) && handlers['submit:' + e.target.id]) { e.preventDefault(); H.bus.emit('submit:' + e.target.id, e.target); }
   });
 
   document.addEventListener('mousedown', (e) => {
@@ -1398,10 +1442,22 @@
   let rz;
   window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (ui.view === 'trends') mountTrendChart(); }, 150); });
 
+  // ---------- feature API ----------
+  H.app = {
+    store, ui, ICON, M, $, esc, pill, lv, T, save, log, toast, go, slot, download,
+    render: () => render(), recompute: () => recompute(), me: () => me(), crew: () => crewList(),
+    data: () => ds, assessments: () => A, dayFor, dayDate, todayCheckin,
+    addView(v) { EXTRA_VIEWS[v.id] = v; if (!NAV.find((n) => n.id === v.id)) NAV.push(v); if (v.icon && v.iconSvg) ICON[v.icon] = v.iconSvg; },
+    addIcon(name, svgInner) { ICON[name] = P(svgInner); },
+  };
+  (H.features || []).forEach((setup) => setup(H.app));
+
   // ---------- boot ----------
   try { if (localStorage.getItem('helios.night') === '1') document.body.classList.add('night'); } catch (e) { /* ignore */ }
   const initial = location.hash.slice(1);
   if (NAV.some((n) => n.id === initial)) ui.view = initial;
+  H.bus.emit('boot');
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
   recompute();
   if (H.cosmos) H.cosmos.starfield($('#stars'));
   const nominal = H.CREW.filter((c) => A[c.id].overall === 0).length;

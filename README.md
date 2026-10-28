@@ -65,6 +65,15 @@ New capabilities live in `js/features/` and plug into the app via a small API (`
 
 **Voice control** uses the browser's speech recognition, which Chrome processes online — it is the one feature that needs a connection.
 
+## Safety, privacy and accessibility
+
+- **Urgent findings follow you.** Any Urgent finding (for example chest pain reported in a check-in) shows a sticky alert bar on every screen, with its protocol and triage, until it is acknowledged.
+- **Privacy lock.** Settings → Privacy lock sets a PIN. The record is then stored only as AES-256-GCM ciphertext (key from PBKDF2-SHA-256, 310,000 iterations). The plain-text copy is removed, the app auto-locks after inactivity, and repeated wrong PINs are rate-limited. Forgetting the PIN means losing the data, so keep an exported backup.
+- **Resilient storage.** Older or damaged saved data is normalised on load. A failed save (full or blocked storage) is reported instead of silently lost. A screen that throws shows a recoverable message instead of a blank page.
+- **Accessibility.** Text colours meet a 4.5:1 contrast ratio. Dialogs trap focus and close with Escape. Page changes are announced to screen readers, and every trend chart has a table view. Blur effects are dropped when the system asks for reduced transparency, and on phones for performance.
+- **Guided tour** on first run (replay from Settings or the command palette).
+- **Exports.** Any indicator as CSV from Trends, and all your readings as a re-importable CSV from My profile.
+
 ## Tests
 
 ```bash

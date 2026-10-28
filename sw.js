@@ -2,7 +2,7 @@
  * HELIOS service worker — keeps the whole app available offline.
  * Network-first for the app files (so updates arrive when online), falling back to cache.
  */
-const CACHE = 'helios-v2';
+const CACHE = 'helios-v4';
 const FILES = [
   './',
   'index.html',
@@ -17,6 +17,7 @@ const FILES = [
   'js/data.js',
   'js/engine.js',
   'js/protocols.js',
+  'js/sanitize.js',
   'js/charts.js',
   'js/validation-data.js',
   'js/lab-model.js',
@@ -44,7 +45,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
   e.respondWith(
-    fetch(e.request).then((res) => {
+    fetch(e.request, { cache: 'no-cache' }).then((res) => {   // revalidate so updates arrive
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
       return res;
     }).catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match('index.html')))

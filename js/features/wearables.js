@@ -208,14 +208,14 @@ window.H = window.H || {};
         <p class="lede">Your watch, ring or health app already knows your normal. Import it and HELIOS builds your personal baselines from it. Files are read on this device and never uploaded.</p></div></div>
       <div class="grid-2">
         <div class="card imp">
-          <h3>Apple Health</h3>
+          <h2 class="ct">Apple Health</h2>
           <p class="muted small">iPhone → Health → your picture → <b>Export All Health Data</b>. Unzip and choose <code>export.xml</code>. Reads resting HR, HRV, blood pressure, temperature, exercise minutes, sleep, body mass, water and calories.</p>
           <label class="btn primary file-btn">${ICON.upload} Choose export.xml<input type="file" accept=".xml,text/xml" data-change="wear-apple" hidden></label>
           ${ui.busy ? `<div class="progress"><div style="width:${ui.busy}"></div></div>` : ''}
           ${ui.apple ? summary(ui.apple, 'apple') : ''}
         </div>
         <div class="card imp">
-          <h3>Fitbit · Garmin · Oura · Whoop · any CSV</h3>
+          <h2 class="ct">Fitbit · Garmin · Oura · Whoop · any CSV</h2>
           <p class="muted small">Export daily summaries as CSV from your device's app or website. HELIOS matches the columns it recognises; you confirm before anything is imported.</p>
           <label class="btn primary file-btn">${ICON.upload} Choose CSV<input type="file" accept=".csv,text/csv,.txt" data-change="wear-csv" hidden></label>
         </div>
@@ -236,7 +236,7 @@ window.H = window.H || {};
     const opts = (sel) => `<option value="-1">— not imported —</option>` + c.head.map((h, i) => `<option value="${i}" ${sel === i ? 'selected' : ''}>${esc(h)}</option>`).join('');
     const preview = c.rows.slice(0, 4);
     return `<div class="card">
-      <h3>Match columns · ${esc(c.name)} <span class="muted small">(${c.rows.length} rows)</span></h3>
+      <h2 class="ct">Match columns · ${esc(c.name)} <span class="muted small">(${c.rows.length} rows)</span></h2>
       <div class="map-grid">
         <div class="field"><label for="wm-date">Date column</label><select id="wm-date" class="input" data-change="wear-datecol">${c.dateCol < 0 ? '<option value="-1" selected>— choose —</option>' : ''}${c.head.map((h, i) => `<option value="${i}" ${c.dateCol === i ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></div>
         <div class="field"><label for="wm-order">Date format</label><select id="wm-order" class="input" data-change="wear-order"><option value="mdy" ${c.order !== 'dmy' ? 'selected' : ''}>Month/Day/Year</option><option value="dmy" ${c.order === 'dmy' ? 'selected' : ''}>Day/Month/Year</option></select></div>
@@ -286,7 +286,7 @@ window.H = window.H || {};
     if (!r.days) { app.toast('No rows with a readable date and value.'); return; }
     merge(r, ui.csv.name); ui.csv = null; app.go('profile');
   });
-  H.bus.on('slot:profile-bottom', () => `<div class="card"><h3>${ICON.import || ''} ${T('Import from wearables')}</h3><p class="muted small">Apple Health, Fitbit, Garmin, Oura, Whoop or any CSV.</p><button class="btn sm primary" data-action="nav" data-view="import">${T('Open importer')}</button></div>`);
+  H.bus.on('slot:profile-bottom', () => `<div class="card"><h2 class="ct">${ICON.import || ''} ${T('Import from wearables')}</h2><p class="muted small">Apple Health, Fitbit, Garmin, Oura, Whoop or any CSV.</p><button class="btn sm primary" data-action="nav" data-view="import">${T('Open importer')}</button></div>`);
 
   H.wearables = { parseCsv, prepareCsv, parseDate, detectOrder, guessUnit, finish, parseApple, APPLE };
 });

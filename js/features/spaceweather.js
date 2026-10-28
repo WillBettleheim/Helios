@@ -66,7 +66,7 @@ window.H = window.H || {};
 
   H.bus.on('slot:overview-side-top', () => {
     const w = sw(), last = w.events.slice(-1)[0];
-    return `<div class="card sw-card ${w.state !== 'quiet' ? 'live' : ''}"><h3>☀ ${T('Space weather')}</h3>
+    return `<div class="card sw-card ${w.state !== 'quiet' ? 'live' : ''}"><h2 class="ct">☀ ${T('Space weather')}</h2>
       <ul class="kv">
         <li><span>${T('Status')}</span>${w.state === 'quiet' ? app.pill(0, T('Quiet')) : w.state === 'warning' ? app.pill(3, T('SPE warning')) : app.pill(2, T('Sheltering'))}</li>
         <li><span>${T('Background (GCR)')}</span><span class="mono">${H.fmt(app.me().inds.dose.current, 2)} mSv/day</span></li>

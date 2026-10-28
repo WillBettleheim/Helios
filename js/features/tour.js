@@ -74,7 +74,8 @@ window.H = window.H || {};
   H.bus.on('boot', () => {
     if (store.prefs && store.prefs.toured) return;
     const wait = () => (document.getElementById('boot') ? setTimeout(wait, 300) : setTimeout(start, 600));
-    wait();
+    if (H.termsAccepted && !H.termsAccepted()) H.bus.on('terms-accepted', () => setTimeout(start, 400));
+    else wait();
   });
   H.bus.on('slot:profile-bottom', () => '');
   H.tour = { start };

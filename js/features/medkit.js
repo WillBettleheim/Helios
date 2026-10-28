@@ -71,7 +71,7 @@ window.H = window.H || {};
             <td class="right"><button class="btn sm" data-action="med-take" data-k="${k}" ${i.qty ? '' : 'disabled'}>${T('Use 1')}</button></td></tr>`; }).join('')}</tbody>
         </table>
       </div>
-      <div class="card"><h3>${T('Medication log')} · ${esc(app.me().crew.name)}</h3>
+      <div class="card"><h2 class="ct">${T('Medication log')} · ${esc(app.me().crew.name)}</h2>
         ${log.length ? `<ul class="log">${log.map((l) => `<li><span class="mono">D${l.day} ${new Date(l.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>${esc(l.name)}</li>`).join('')}</ul>` : `<p class="muted small">${T('Nothing taken yet.')}</p>`}
       </div>`;
   }

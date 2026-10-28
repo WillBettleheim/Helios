@@ -91,9 +91,9 @@ window.H = window.H || {};
         </div>
       </section>` : `<div class="empty">${ICON.labs || ''}<div><b>${pre.length ? T('Add an in-flight or post-flight draw to score it.') : T('Start with at least one preflight draw.')}</b><p>Or load a real Inspiration4 crew member's draws to see how the model behaves.</p></div></div>`}
 
-      ${latest && rangeFlags(latest).length ? `<div class="card"><h3>${T('Outside the lab reference range')}</h3><ul class="kv">${rangeFlags(latest).map((f) => `<li><span>${esc(titleCase(f.name))}</span><span class="mono">${latest.values[f.id]} ${esc(f.unit)}</span><span class="muted small">range ${f.range[0] ?? '–'}–${f.range[1] ?? '–'}</span></li>`).join('')}</ul></div>` : ''}
+      ${latest && rangeFlags(latest).length ? `<div class="card"><h2 class="ct">${T('Outside the lab reference range')}</h2><ul class="kv">${rangeFlags(latest).map((f) => `<li><span>${esc(titleCase(f.name))}</span><span class="mono">${latest.values[f.id]} ${esc(f.unit)}</span><span class="muted small">range ${f.range[0] ?? '–'}–${f.range[1] ?? '–'}</span></li>`).join('')}</ul></div>` : ''}
 
-      <div class="card"><h3>${T('Your draws')}</h3>${list.length ? `<ul class="lab-timeline">${timeline}</ul>` : `<p class="muted small">${T('No blood draws yet.')}</p>`}</div>`;
+      <div class="card"><h2 class="ct">${T('Your draws')}</h2>${list.length ? `<ul class="lab-timeline">${timeline}</ul>` : `<p class="muted small">${T('No blood draws yet.')}</p>`}</div>`;
   }
 
   function form() {

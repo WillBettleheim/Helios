@@ -41,7 +41,7 @@ window.H = window.H || {};
         <button class="triage-card" data-action="nav" data-view="pvt">${ICON.pvt}<b>${T('Alertness (PVT)')}</b><small class="muted">${T('Vigilance')}</small></button>
       </div>
       ${st.test ? `<div class="card"><div id="cog-stage" class="cog-stage">${stage()}</div></div>` : ''}
-      <div class="card"><h3>${T('Recent results')}</h3>${hist.length ? `<ul class="kv">${hist.map((r) => `<li><span>${T(TESTS[r.test].name)} · D${r.day}</span><span class="mono">${+r[TESTS[r.test].key]} ${TESTS[r.test].unit}</span></li>`).join('')}</ul>` : `<p class="muted small">${T('No results yet.')}</p>`}</div>`;
+      <div class="card"><h2 class="ct">${T('Recent results')}</h2>${hist.length ? `<ul class="kv">${hist.map((r) => `<li><span>${T(TESTS[r.test].name)} · D${r.day}</span><span class="mono">${+r[TESTS[r.test].key]} ${TESTS[r.test].unit}</span></li>`).join('')}</ul>` : `<p class="muted small">${T('No results yet.')}</p>`}</div>`;
   }
 
   function stage() {

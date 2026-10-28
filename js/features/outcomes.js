@@ -74,7 +74,7 @@ window.H = window.H || {};
     const ranked = Object.entries(by).sort((x, y) => y[1].b / y[1].n - x[1].b / x[1].n);
     const pending = rows.filter((x) => x.r.state === 'pending').length;
     if (!ranked.length && !pending) return '';
-    return `<div class="card"><h3>${T('What works for you')}</h3>
+    return `<div class="card"><h2 class="ct">${T('What works for you')}</h2>
       ${ranked.length ? `<ul class="kv">${ranked.slice(0, 4).map(([id, x]) => `<li><span>${esc(H.PROTOCOLS.find((p) => p.id === id)?.title || id)}</span><span class="mono">${x.b}/${x.n}</span></li>`).join('')}</ul>` : ''}
       ${pending ? `<p class="muted small">${pending} protocol${pending > 1 ? 's' : ''} being measured.</p>` : ''}</div>`;
   });

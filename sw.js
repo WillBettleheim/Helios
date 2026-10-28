@@ -2,7 +2,7 @@
  * HELIOS service worker — keeps the whole app available offline.
  * Network-first for the app files (so updates arrive when online), falling back to cache.
  */
-const CACHE = 'helios-v4';
+const CACHE = 'helios-v5';
 const FILES = [
   './',
   'index.html',
@@ -31,6 +31,7 @@ const FILES = [
   'js/features/nutrition.js',
   'js/features/spaceweather.js',
   'js/features/settings.js',
+  'js/features/terms.js',
   'js/features/tour.js',
   'js/app.js',
 ];

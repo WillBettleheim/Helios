@@ -70,7 +70,7 @@ window.H = window.H || {};
         <span class="mono">${esc(d.date)}</span><span class="tag">${d.kind === 'pre' ? T('Preflight') : T('In/post-flight')}</span>
         <span class="lab-bar">${r ? `<i class="lvl-${app.lv(r.level)}" style="width:${r.value}%"></i>` : ''}</span>
         <span class="mono">${r ? r.value : '—'}</span>
-        <button class="btn sm ghost" data-action="lab-del" data-id="${d.id}" aria-label="Delete draw">✕</button></li>`;
+        <button class="btn sm ghost" data-action="lab-del" data-id="${esc(d.id)}" aria-label="Delete draw">✕</button></li>`;
     }).join('');
 
     return `

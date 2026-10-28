@@ -22,7 +22,10 @@ window.H = window.H || {};
     const w = sw();
     let el = document.getElementById('spe');
     if (w.state === 'quiet') { if (el) el.remove(); clearInterval(tick); tick = null; return; }
-    if (!el) { el = document.createElement('div'); el.id = 'spe'; el.setAttribute('role', 'alertdialog'); document.body.appendChild(el); }
+    if (!el) { el = document.createElement('div'); el.id = 'spe'; el.setAttribute('role', 'alertdialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', T('Solar particle event')); document.body.appendChild(el); }
+    const sig = `${w.state}|${w.minimised ? 1 : 0}|${H.getLang ? H.getLang() : ''}`;
+    if (el.dataset.sig === sig) { update(); return; }
+    el.dataset.sig = sig;
     const now = Date.now();
     if (w.state === 'warning') {
       const left = w.arrival - now;
@@ -40,18 +43,25 @@ window.H = window.H || {};
       el.innerHTML = `<div class="spe-box">
         <span class="spe-k">${T('IN STORM SHELTER')}</span>
         <div class="spe-clock mono">${fmtT(inMs)}</div>
-        <div class="spe-stats"><div><span>${T('Dose so far')}</span><b class="mono">${(h * RATE_SHELTER).toFixed(2)} mSv</b></div><div><span>${T('Dose avoided')}</span><b class="mono">${(h * (RATE_OUT - RATE_SHELTER)).toFixed(2)} mSv</b></div></div>
+        <div class="spe-stats"><div><span>${T('Dose so far')}</span><b class="mono" data-f="dose">${(h * RATE_SHELTER).toFixed(2)} mSv</b></div><div><span>${T('Dose avoided')}</span><b class="mono" data-f="avoided">${(h * (RATE_OUT - RATE_SHELTER)).toFixed(2)} mSv</b></div></div>
         <p>${T('Stay until the all-clear (dose rate below 3 mSv/day for 6 h). Keep your dosimeter on.')}</p>
         <div class="btns"><button class="btn primary big" data-action="spe-clear">${T('All-clear received')}</button><button class="btn" data-action="spe-min">${T('Minimise')}</button></div></div>`;
     }
-    if (w.minimised) { el.classList.add('min'); el.dataset.action = 'spe-show'; } else delete el.dataset.action;
-    if (!tick) tick = setInterval(() => {
-      const c = document.querySelector('#spe .spe-clock');
-      const w2 = sw();
-      if (!c || w2.state === 'quiet') return;
-      if (w2.state === 'warning') { c.textContent = fmtT(w2.arrival - Date.now()); }
-      else overlay();
-    }, 1000);
+    if (w.minimised) { el.classList.add('min'); el.dataset.action = 'spe-show'; el.removeAttribute('aria-modal'); }
+    else { delete el.dataset.action; el.setAttribute('aria-modal', 'true'); const b = el.querySelector('.btn.primary'); if (b) b.focus(); }
+    if (!tick) tick = setInterval(update, 1000);
+  }
+
+  // Updates only the live numbers so keyboard focus is never lost.
+  function update() {
+    const w = sw(), c = document.querySelector('#spe .spe-clock');
+    if (!c || w.state === 'quiet') return;
+    if (w.state === 'warning') { c.textContent = fmtT(w.arrival - Date.now()); return; }
+    const inMs = Date.now() - w.shelteredAt, h = inMs / 3.6e6;
+    c.textContent = fmtT(inMs);
+    const d = document.querySelector('#spe [data-f="dose"]'), a = document.querySelector('#spe [data-f="avoided"]');
+    if (d) d.textContent = `${(h * RATE_SHELTER).toFixed(2)} mSv`;
+    if (a) a.textContent = `${(h * (RATE_OUT - RATE_SHELTER)).toFixed(2)} mSv`;
   }
 
   H.bus.on('slot:overview-side-top', () => {

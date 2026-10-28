@@ -3795,5 +3795,396 @@
         }
       ]
     }
-  ]
+  ],
+  "nested": {
+    "grid": 24,
+    "chosen": [
+      {
+        "heldOut": "C001",
+        "ps": "clinical",
+        "mid": "signature",
+        "k": 40,
+        "innerAuroc": 0.796
+      },
+      {
+        "heldOut": "C002",
+        "ps": "all",
+        "mid": "logreg",
+        "k": 10,
+        "innerAuroc": 0.722
+      },
+      {
+        "heldOut": "C003",
+        "ps": "all",
+        "mid": "signature",
+        "k": 5,
+        "innerAuroc": 0.889
+      },
+      {
+        "heldOut": "C004",
+        "ps": "clinical+cardio",
+        "mid": "signature",
+        "k": 20,
+        "innerAuroc": 0.944
+      }
+    ],
+    "ensemble": {
+      "auroc": 0.854,
+      "aurocPostOnly": 0.958,
+      "pValue": 0.0121,
+      "top1": 3,
+      "rows": [
+        {
+          "subject": "C001",
+          "t": "R+1",
+          "label": 1,
+          "score": 0.778
+        },
+        {
+          "subject": "C001",
+          "t": "R+45",
+          "label": 0,
+          "score": 0.299
+        },
+        {
+          "subject": "C001",
+          "t": "R+82",
+          "label": 0,
+          "score": 0.562
+        },
+        {
+          "subject": "C001",
+          "t": "R+194",
+          "label": 0,
+          "score": 0.674
+        },
+        {
+          "subject": "C001",
+          "t": "L-92",
+          "label": 0,
+          "score": 0.431
+        },
+        {
+          "subject": "C001",
+          "t": "L-44",
+          "label": 0,
+          "score": 0.222
+        },
+        {
+          "subject": "C001",
+          "t": "L-3",
+          "label": 0,
+          "score": 0.535
+        },
+        {
+          "subject": "C002",
+          "t": "R+1",
+          "label": 1,
+          "score": 0.812
+        },
+        {
+          "subject": "C002",
+          "t": "R+45",
+          "label": 0,
+          "score": 0.285
+        },
+        {
+          "subject": "C002",
+          "t": "R+82",
+          "label": 0,
+          "score": 0.403
+        },
+        {
+          "subject": "C002",
+          "t": "R+194",
+          "label": 0,
+          "score": 0.431
+        },
+        {
+          "subject": "C002",
+          "t": "L-92",
+          "label": 0,
+          "score": 0.236
+        },
+        {
+          "subject": "C002",
+          "t": "L-44",
+          "label": 0,
+          "score": 0.431
+        },
+        {
+          "subject": "C002",
+          "t": "L-3",
+          "label": 0,
+          "score": 0.903
+        },
+        {
+          "subject": "C003",
+          "t": "R+1",
+          "label": 1,
+          "score": 0.66
+        },
+        {
+          "subject": "C003",
+          "t": "R+45",
+          "label": 0,
+          "score": 0.25
+        },
+        {
+          "subject": "C003",
+          "t": "R+82",
+          "label": 0,
+          "score": 0.417
+        },
+        {
+          "subject": "C003",
+          "t": "R+194",
+          "label": 0,
+          "score": 0.688
+        },
+        {
+          "subject": "C003",
+          "t": "L-92",
+          "label": 0,
+          "score": 0.486
+        },
+        {
+          "subject": "C003",
+          "t": "L-44",
+          "label": 0,
+          "score": 0.951
+        },
+        {
+          "subject": "C003",
+          "t": "L-3",
+          "label": 0,
+          "score": 0.049
+        },
+        {
+          "subject": "C004",
+          "t": "R+1",
+          "label": 1,
+          "score": 0.743
+        },
+        {
+          "subject": "C004",
+          "t": "R+45",
+          "label": 0,
+          "score": 0.243
+        },
+        {
+          "subject": "C004",
+          "t": "R+82",
+          "label": 0,
+          "score": 0.514
+        },
+        {
+          "subject": "C004",
+          "t": "R+194",
+          "label": 0,
+          "score": 0.458
+        },
+        {
+          "subject": "C004",
+          "t": "L-92",
+          "label": 0,
+          "score": 0.882
+        },
+        {
+          "subject": "C004",
+          "t": "L-44",
+          "label": 0,
+          "score": 0.646
+        },
+        {
+          "subject": "C004",
+          "t": "L-3",
+          "label": 0,
+          "score": 0.014
+        }
+      ]
+    },
+    "auroc": 0.677,
+    "aurocPostOnly": 0.646,
+    "pValue": 0.1487,
+    "top1": 1,
+    "crew": 4,
+    "personal": {
+      "sensitivity": 0.5,
+      "specificity": 0.833,
+      "tp": 2,
+      "fp": 2,
+      "note": "Post-flight draw flagged when it scores above all of that person's own preflight draws."
+    },
+    "rows": [
+      {
+        "subject": "C001",
+        "t": "R+1",
+        "label": 1,
+        "score": 0.303
+      },
+      {
+        "subject": "C001",
+        "t": "R+45",
+        "label": 0,
+        "score": -0.095
+      },
+      {
+        "subject": "C001",
+        "t": "R+82",
+        "label": 0,
+        "score": -0.175
+      },
+      {
+        "subject": "C001",
+        "t": "R+194",
+        "label": 0,
+        "score": 0.346
+      },
+      {
+        "subject": "C001",
+        "t": "L-92",
+        "label": 0,
+        "score": -0.002
+      },
+      {
+        "subject": "C001",
+        "t": "L-44",
+        "label": 0,
+        "score": 0.293
+      },
+      {
+        "subject": "C001",
+        "t": "L-3",
+        "label": 0,
+        "score": -0.291
+      },
+      {
+        "subject": "C002",
+        "t": "R+1",
+        "label": 1,
+        "score": -0.03
+      },
+      {
+        "subject": "C002",
+        "t": "R+45",
+        "label": 0,
+        "score": 0.685
+      },
+      {
+        "subject": "C002",
+        "t": "R+82",
+        "label": 0,
+        "score": -2.649
+      },
+      {
+        "subject": "C002",
+        "t": "R+194",
+        "label": 0,
+        "score": -9.281
+      },
+      {
+        "subject": "C002",
+        "t": "L-92",
+        "label": 0,
+        "score": -1.539
+      },
+      {
+        "subject": "C002",
+        "t": "L-44",
+        "label": 0,
+        "score": -5.561
+      },
+      {
+        "subject": "C002",
+        "t": "L-3",
+        "label": 0,
+        "score": -1.734
+      },
+      {
+        "subject": "C003",
+        "t": "R+1",
+        "label": 1,
+        "score": 0.475
+      },
+      {
+        "subject": "C003",
+        "t": "R+45",
+        "label": 0,
+        "score": -1.908
+      },
+      {
+        "subject": "C003",
+        "t": "R+82",
+        "label": 0,
+        "score": 1.075
+      },
+      {
+        "subject": "C003",
+        "t": "R+194",
+        "label": 0,
+        "score": 1.207
+      },
+      {
+        "subject": "C003",
+        "t": "L-92",
+        "label": 0,
+        "score": -0.815
+      },
+      {
+        "subject": "C003",
+        "t": "L-44",
+        "label": 0,
+        "score": 1.367
+      },
+      {
+        "subject": "C003",
+        "t": "L-3",
+        "label": 0,
+        "score": -1.382
+      },
+      {
+        "subject": "C004",
+        "t": "R+1",
+        "label": 1,
+        "score": 0.181
+      },
+      {
+        "subject": "C004",
+        "t": "R+45",
+        "label": 0,
+        "score": -0.298
+      },
+      {
+        "subject": "C004",
+        "t": "R+82",
+        "label": 0,
+        "score": -0.001
+      },
+      {
+        "subject": "C004",
+        "t": "R+194",
+        "label": 0,
+        "score": 0.005
+      },
+      {
+        "subject": "C004",
+        "t": "L-92",
+        "label": 0,
+        "score": 0.387
+      },
+      {
+        "subject": "C004",
+        "t": "L-44",
+        "label": 0,
+        "score": 0.667
+      },
+      {
+        "subject": "C004",
+        "t": "L-3",
+        "label": 0,
+        "score": -1.054
+      }
+    ]
+  }
 }

@@ -29,7 +29,16 @@ Then open http://localhost:8173. Opening `index.html` directly also works.
 | **Downlink report** | Compact summary for the flight surgeon: queue for the next window, export JSON, or print |
 | **Crew (CMO)** | Crew Medical Officer overview. Private behavioral entries stay hidden |
 
-There is also a **sleep-period display** (moon icon): a red-shifted, low-blue-light theme.
+| **Model validation** | Results on real Inspiration4 crew blood data (see below) |
+
+Across the app:
+
+- **Cinematic interface:** animated deep-space starfield, a start-up sequence, glass panels and staggered entrance animations. Motion is turned off for anyone who prefers reduced motion.
+- **Mission trajectory:** the Earth-to-Mars transfer arc with the vehicle's position, days to arrival and signal delay.
+- **Body status map:** a body silhouette with pulsing hotspots per health domain; click one to open its trends.
+- **Voice briefing:** a spoken summary of readiness, top findings and due tasks (Web Speech API, works offline).
+- **Command palette:** press ⌘K, Ctrl+K or `/` to jump to any view, indicator, protocol or crew member, or run an action.
+- **Sleep-period display** (moon icon): a red-shifted, low-blue-light theme.
 
 ## Health domains and indicators
 
@@ -77,6 +86,18 @@ node tools/evaluate.js   # writes data/validation.json and js/validation-data.js
 | Unsupervised anomaly score | 0.35 | 0.40 | 0 / 4 |
 | **Spaceflight-signature model** | **0.79** (p = 0.037) | **0.92** | **3 / 4** |
 | Logistic regression (L2) | 0.73 | 0.88 | 3 / 4 |
+
+**Final models.** Run 3 above was hand-picked, so two follow-ups test that choice more fairly:
+
+| Final model | AUROC | AUROC (post-flight only) | R+1 ranked first |
+|---|---|---|---|
+| **Ensemble:** rank-average of all 24 configurations (3 panel sets × 2 models × 4 feature counts) | **0.85** (p = 0.012) | **0.96** | **3 / 4** |
+| **Nested search:** best of the 24 chosen by inner leave-one-crew-out on the training crew only | 0.68 (p = 0.15) | 0.65 | 1 / 4 |
+
+The nested search is the most honest estimate of picking one "best" model. It scores lower than the
+hand-picked run 3 because, with 4 people, which configuration wins is mostly noise. Averaging the
+configurations avoids that, but the ensemble was designed after runs 1–3, so treat it as promising
+rather than proven.
 
 Run 1 (all 113 lab values, chosen before seeing any results) peaked at an AUROC of 0.64. Runs 2–3
 were added after looking at run 1, so their scores are optimistic. With 4 people, no result is

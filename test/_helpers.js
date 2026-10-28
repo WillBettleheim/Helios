@@ -9,6 +9,7 @@ const ROOT = path.join(__dirname, '..');
 function load(...files) {
   global.window = global;
   if (!global.addEventListener) global.addEventListener = () => {};
+  if (!global.document) global.document = { addEventListener() {}, getElementById: () => null, querySelector: () => null, querySelectorAll: () => [], body: { classList: { toggle() {}, contains: () => false } } };
   delete global.H;
   for (const f of files) {
     const p = path.join(ROOT, f);

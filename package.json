@@ -7,6 +7,7 @@
     "start": "python3 -m http.server 8173",
     "test": "node --test test/",
     "evaluate": "node tools/evaluate.js",
-    "sync-server": "node tools/sync-server.js"
+    "sync-server": "node tools/sync-server.js",
+    "terms": "node tools/build-terms.js"
   }
 }

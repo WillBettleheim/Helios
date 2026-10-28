@@ -212,7 +212,7 @@
           <select data-change="crew">${crewList().map((x) => `<option value="${x.id}" ${x.id === ui.crewId ? 'selected' : ''}>${esc(x.name)}${x.self ? ' (you)' : ''} — ${esc(x.role)}</option>`).join('')}</select>
         </label>
         <button class="pal-btn" data-action="palette" aria-label="Open command palette">${ICON.search}<span>Search</span><kbd>⌘K</kbd></button>
-        <button class="icon-btn" data-action="night" title="Toggle sleep-period display (low blue light)" aria-label="Toggle sleep-period display">${document.body.classList.contains('night') ? ICON.sun : ICON.moon}</button>
+        <button class="icon-btn" data-action="night" title="Toggle sleep-period display (low blue light)" aria-label="Toggle sleep-period display" aria-pressed="${document.body.classList.contains('night')}">${document.body.classList.contains('night') ? ICON.sun : ICON.moon}</button>
       </div>`;
     tickClock();
   }
@@ -282,7 +282,7 @@
   }
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Tab') return;
-    const dlg = document.querySelector('#palette:not([hidden]) .pal-box, #more-sheet:not([hidden]) .sheet, #spe:not(.min) .spe-box, #lock .lock-box');
+    const dlg = document.querySelector('#terms-gate .tg-box, #lock .lock-box, #palette:not([hidden]) .pal-box, #more-sheet:not([hidden]) .sheet, #spe:not(.min) .spe-box, #tour .tour-card');
     if (!dlg) return;
     const f = [...dlg.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((x) => !x.disabled && x.offsetParent !== null);
     if (!f.length) return;
@@ -466,11 +466,11 @@
           ${slot('overview-side-top', a)}
           ${c.personal ? adaptCard(a) : ''}
           <div class="card body-card">
-            <h3>${T('Body status')}</h3>
+            <h2 class="ct">${T('Body status')}</h2>
             ${bodyMap(a)}
           </div>
           <div class="card">
-            <h3>${T('Today')}</h3>
+            <h2 class="ct">${T('Today')}</h2>
             <ul class="tasks">
               <li class="${ci ? 'ok' : ''}">${ci ? ICON.check : '<i class="todo"></i>'}<span>Daily check-in</span><small>${ci ? 'Submitted' : '2 min'}</small></li>
               <li class="${pvtDone ? 'ok' : ''}">${pvtDone ? ICON.check : '<i class="todo"></i>'}<span>Alertness test (PVT-B)</span><small>${pvtDone ? 'Done' : '1–3 min'}</small></li>
@@ -483,12 +483,12 @@
             </div>
           </div>
           <div class="card">
-            <h3>Habitat environment</h3>
+            <h2 class="ct">Habitat environment</h2>
             <ul class="kv">${['co2', 'ctemp', 'rh', 'noise'].map(envRow).join('')}</ul>
             <button class="link" data-action="open-domain" data-domain="env">View environment trends ${ICON.arrow}</button>
           </div>
           <div class="card">
-            <h3>${ICON.antenna} Ground link</h3>
+            <h2 class="ct">${ICON.antenna} Ground link</h2>
             <p class="muted small">You are ${Math.floor(M.lightTimeSec / 60)} light-minutes from Earth. A question sent now gets an answer in about <b>${arrivalText().replace('h', 'h').trim()}</b> at the earliest, so act on-board first.</p>
             <div class="sched"><div><span class="k">Items queued for downlink</span><span class="mono">${store.queue.length}</span></div></div>
             <button class="link" data-action="nav" data-view="report">Open downlink report ${ICON.arrow}</button>
@@ -697,7 +697,7 @@
         ${slot('checkin-fields', c, v)}
         <fieldset>
           <legend>Anything else?</legend>
-          <textarea name="notes" rows="3" placeholder="Optional note for your record">${esc(v.notes)}</textarea>
+          <label for="f-notes" class="sr-only">Note for your record</label><textarea id="f-notes" name="notes" rows="3" placeholder="Optional note for your record">${esc(v.notes)}</textarea>
           <div class="field"><span class="label">Who can see the behavioral part of this check-in?</span>
             <div class="choice">
               <label><input type="radio" name="share" value="cmo" ${v.share !== 'private' ? 'checked' : ''}><span>CMO + flight surgeon</span></label>
@@ -740,7 +740,7 @@
       <div class="result-grid">
         <div class="card center">${ring(a.readiness, a.overall)}<p class="muted small">${delta === 0 ? 'Readiness unchanged' : `Readiness ${delta > 0 ? '+' : ''}${delta} after your check-in`}</p></div>
         <div class="card">
-          <h3>Your entries</h3>
+          <h2 class="ct">Your entries</h2>
           <ul class="kv">
             <li><span>Mood</span><span class="mono">${ci.mood}/10</span>${pill(a.inds.mood.status)}</li>
             <li><span>Stress</span><span class="mono">${ci.stress}/10</span>${pill(a.inds.stress.status)}</li>
@@ -777,12 +777,12 @@
           </div>
         </div>
         <aside class="card">
-          <h3>Your reference</h3>
+          <h2 class="ct">Your reference</h2>
           <ul class="kv">
             <li><span>${PB && PB.mean != null ? SOURCE_LABEL[PB.source] : 'Your baseline'}</span><span class="mono">${PB && PB.mean != null ? `${Math.round(PB.mean)} ± ${Math.round(PB.sd)} ms` : `learning ${PB ? PB.n : 0}/7 tests`}</span></li>
             <li><span>Lapse threshold</span><span class="mono">&gt; ${PVT_LAPSE} ms</span></li>
           </ul>
-          <h3>Recent tests</h3>
+          <h2 class="ct">Recent tests</h2>
           ${hist.length ? `<ul class="kv">${hist.map((t) => `<li><span>D${t.day} · ${new Date(t.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span><span class="mono">${t.mean} ms · ${t.lapses} lapse${t.lapses === 1 ? "" : "s"}</span></li>`).join('')}</ul>` : '<p class="muted small">No tests recorded in this session yet.</p>'}
           <p class="muted small">Baseline was set on the on-board tablet. Browser and mouse latency can add 30–60 ms, so treat prototype results as indicative.</p>
         </aside>
@@ -964,13 +964,13 @@
           <thead><tr><th>Domain</th><th>Status</th><th>Key indicators</th></tr></thead>
           <tbody>${a.domains.map((d) => `<tr><td>${d.name}</td><td>${pill(d.status)}</td><td>${d.list.map((r) => `<span class="kvi ${r.status ? 't-' + lv(r.status) : ''}">${r.ind.short} <b class="mono">${H.fmt(r.current, r.ind.dec)}</b> ${r.ind.unit}</span>`).join('')}</td></tr>`).join('')}</tbody>
         </table></div>
-        <h3>Findings</h3>
+        <h2 class="ct">Findings</h2>
         ${a.insights.length ? `<ul class="findings">${a.insights.map((i) => `<li>${pill(i.level)}<span>${esc(i.title)}</span><small>${H.ESCALATION[i.escalate]} · ${i.protocol}</small></li>`).join('')}</ul>` : '<p class="muted">No active findings.</p>'}
-        <h3>Crew actions log</h3>
+        <h2 class="ct">Crew actions log</h2>
         ${entries.length ? `<ul class="log">${entries.map((l) => `<li><span class="mono">D${l.day} ${new Date(l.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>${esc(l.text)}</li>`).join('')}</ul>` : '<p class="muted small">No actions logged yet. Check-ins, tests, protocol steps and escalations appear here.</p>'}
       </div>
       <div class="card">
-        <h3>${ICON.antenna} Downlink queue</h3>
+        <h2 class="ct">${ICON.antenna} Downlink queue</h2>
         ${store.queue.length ? `<ul class="log">${store.queue.map((q) => `<li><span class="mono">D${+q.day}</span>${esc(q.title)} <small class="muted">· ${+q.kb} KB · ${esc(q.crewName)}</small></li>`).join('')}</ul>
           <button class="btn sm ghost" data-action="clear-queue">Clear queue</button>` : '<p class="muted small">Nothing queued. Items you flag for the flight surgeon are batched here for the next window.</p>'}
       </div>`;
@@ -1108,13 +1108,13 @@
 
       <div class="v-grid">
         <div class="card">
-          <h3>${esc(m.name)} · scores per draw</h3>
+          <h2 class="ct">${esc(m.name)} · scores per draw</h2>
           <p class="muted small">${esc(m.desc)}</p>
           ${scoreStrip(m)}
           <div class="legend-row"><span><i class="sw pos"></i>R+1 (day after landing)</span><span><i class="sw rec"></i>Recovery R+45/82/194</span><span><i class="sw pre"></i>Preflight</span></div>
         </div>
         <div class="card">
-          <h3>Largest changes the day after landing</h3>
+          <h2 class="ct">Largest changes the day after landing</h2>
           <p class="muted small">Average shift from each person's preflight baseline at R+1 (${esc(run.config.label.split(' · ')[0])}).</p>
           <ul class="markers">${run.markers.slice(0, 10).map((x) => `<li><span>${esc(x.name.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()))}<small>${PANEL_NAME[x.panel]} · ${x.sameDir}/4 crew same direction</small></span>
             <span class="zbar ${x.meanZ < 0 ? 'neg' : 'pos'}"><i style="width:${(Math.abs(x.meanZ) / maxZ) * 50}%"></i></span><span class="mono">${x.meanZ > 0 ? '+' : ''}${x.meanZ.toFixed(1)} SD</span></li>`).join('')}</ul>
@@ -1122,7 +1122,7 @@
       </div>
 
       <div class="card">
-        <h3>What this means — and what it doesn't</h3>
+        <h2 class="ct">What this means — and what it doesn't</h2>
         <ul class="v-notes">
           ${N ? `<li><b>Averaging beats picking.</b> The rank-averaged ensemble (${N.ensemble.auroc.toFixed(2)}) outperforms choosing one configuration by inner cross-validation (${N.auroc.toFixed(2)}): with 4 people, which single model "wins" is mostly luck, while the average is stable. The ensemble design was chosen after runs 1–3, so treat it as promising rather than proven.</li>` : ''}
           <li><b>A supervised spaceflight signature works better than outlier counting.</b> Learning which lab values move together after flight (on the other three crew) picked out R+1 for 3 of 4 people. Counting individual outliers did not.</li>
@@ -1154,7 +1154,7 @@
     const mine = st.preflight + st.learned + st.adaptive + st.rebased;
     const sens = H.SENSITIVITY[store.profile.sensitivity] || H.SENSITIVITY.standard;
     return `<div class="card adapt-card">
-      <h3>${ICON.profile} Tuned to you</h3>
+      <h2 class="ct">${ICON.profile} Tuned to you</h2>
       <div class="adapt-meter"><i style="width:${(mine / total) * 100}%"></i><b style="width:${(st.calibrating / total) * 100}%"></b></div>
       <p class="small"><b class="mono">${mine}/${total}</b> baselines are personal${st.calibrating ? ` · <b class="mono">${st.calibrating}</b> learning` : ''}.</p>
       <p class="muted small">Alerts: <b>${sens.label}</b> (${sens.zMon}/${sens.zAct} SD).</p>
@@ -1192,12 +1192,12 @@
 
       <div class="grid-2">
         <div class="card">
-          <h3>Alert sensitivity</h3>
+          <h2 class="ct">Alert sensitivity</h2>
           <p class="muted small">How far from <em>your</em> normal a reading must be before HELIOS raises Monitor and Action.</p>
           <div class="sens">${Object.entries(H.SENSITIVITY).map(([k, v]) => `<button class="${(p.sensitivity || 'standard') === k ? 'active' : ''}" data-action="sensitivity" data-k="${k}"><b>${v.label}</b><span class="mono">${v.zMon} / ${v.zAct} SD</span><small>${v.note}</small></button>`).join('')}</div>
         </div>
         <div class="card">
-          <h3>${ICON.upload} Your data</h3>
+          <h2 class="ct">${ICON.upload} Your data</h2>
           <p class="muted small"><b class="mono">${nReadings}</b> imported readings over <b class="mono">${Object.keys(recs).length}</b> days · <b class="mono">${nCheck}</b> check-ins · <b class="mono">${nPvt}</b> alertness tests. Everything stays on this device.</p>
           <div class="btns">
             <label class="btn sm primary file-btn">${ICON.upload} Import CSV<input type="file" accept=".csv,text/csv" data-change="import-csv" hidden></label>
@@ -1211,7 +1211,7 @@
       </div>
 
       <div class="card table-wrap">
-        <h3>Your baselines</h3>
+        <h2 class="ct">Your baselines</h2>
         <table class="table">
           <thead><tr><th>Indicator</th><th>Source</th><th>Your normal</th><th>Current</th><th>Status</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
@@ -1393,8 +1393,9 @@
     else if (act === 'set-crew') { switchCrew(el.dataset.id); go('overview'); }
     else if (act === 'open-protocol') { ui.protocol = el.dataset.id; go('protocols'); }
     else if (act === 'night') {
-      document.body.classList.toggle('night');
-      try { localStorage.setItem('helios.night', document.body.classList.contains('night') ? '1' : '0'); } catch (err) { /* ignore */ }
+      // The moon button flips between the sleep display and whatever theme was chosen before.
+      const cur = H.theme.get();
+      H.theme.set(cur === 'night' ? (H.theme.prev || 'dark') : (H.theme.prev = cur, 'night'));
       if (H.redrawStars) H.redrawStars();
       render();
     }
@@ -1579,6 +1580,28 @@
   let rz;
   window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (ui.view === 'trends') mountTrendChart(); }, 150); });
 
+  // ---------- theme: dark (default), day (light), night (red sleep display), or follow the system ----------
+  H.theme = {
+    get() {
+      try {
+        const t = localStorage.getItem('helios.theme');
+        if (t) return t;
+        return localStorage.getItem('helios.night') === '1' ? 'night' : 'dark';   // older setting
+      } catch (e) { return 'dark'; }
+    },
+    set(t) { try { localStorage.setItem('helios.theme', t); } catch (e) { /* ignore */ } H.theme.apply(); },
+    apply() {
+      const t = H.theme.get();
+      const light = t === 'day' || (t === 'system' && window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches);
+      document.body.classList.toggle('night', t === 'night');
+      document.body.classList.toggle('day', light);
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.content = light ? '#eef2f7' : t === 'night' ? '#050101' : '#05070d';
+      if (H.redrawStars) H.redrawStars();
+    },
+  };
+  if (window.matchMedia) matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { if (H.theme.get() === 'system') { H.theme.apply(); render(); } });
+
   // ---------- feature API ----------
   H.app = {
     store, ui, ICON, M, $, esc, pill, lv, T, save, log, toast, go, slot, download,
@@ -1593,31 +1616,37 @@
   function showLock() {
     const el = document.createElement('div');
     el.id = 'lock';
-    let fails = 0, until = 0;
+    // Wrong-PIN count and lockout survive reloads; each extra failure doubles the wait.
+    const readF = () => { try { return JSON.parse(localStorage.getItem('helios.lockfails')) || { n: 0, until: 0 }; } catch (e) { return { n: 0, until: 0 }; } };
+    const writeF = (f) => { try { localStorage.setItem('helios.lockfails', JSON.stringify(f)); } catch (e) { /* ignore */ } };
     el.innerHTML = `<form class="lock-box" autocomplete="off">
       <svg viewBox="0 0 32 32" class="boot-logo" aria-hidden="true"><circle cx="16" cy="16" r="6.5" class="sun"/><ellipse cx="16" cy="16" rx="14" ry="6" class="orbit" transform="rotate(-25 16 16)"/></svg>
       <h1>HELIOS</h1><p>${T('Your health record is encrypted on this device.')}</p>
       <label for="lock-pin" class="sr-only">PIN</label>
-      <input id="lock-pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="PIN" maxlength="32" required>
+      <input id="lock-pin" type="password" autocomplete="current-password" placeholder="PIN or passphrase" maxlength="128" required>
       <button class="btn primary" type="submit">${T('Unlock')}</button><p class="lock-msg" role="status"></p></form>`;
     document.body.appendChild(el);
     const input = el.querySelector('input'), msg = el.querySelector('.lock-msg');
     input.focus();
     el.querySelector('form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (Date.now() < until) { msg.textContent = `Too many attempts — wait ${Math.ceil((until - Date.now()) / 1000)} s.`; return; }
+      const f = readF();
+      if (Date.now() < f.until) { msg.textContent = `Too many attempts — wait ${Math.ceil((f.until - Date.now()) / 1000)} s.`; return; }
       msg.textContent = T('Unlocking…');
       try {
         const data = await H.vault.unlock(input.value);
+        writeF({ n: 0, until: 0 });
         Object.keys(store).forEach((k) => delete store[k]);
         Object.assign(store, normalize(data));
         ui.crewId = store.profile ? 'me' : 'nakamura';
         el.remove();
         safeStart();
       } catch (err) {
-        fails++; input.value = '';
-        if (fails >= 5) { until = Date.now() + 30000 * (fails - 4); }
-        msg.textContent = fails >= 5 ? 'Wrong PIN. Locked for 30 s.' : 'Wrong PIN.';
+        input.value = '';
+        f.n++;
+        if (f.n >= 5) f.until = Date.now() + 30000 * 2 ** Math.min(10, f.n - 5);
+        writeF(f);
+        msg.textContent = f.n >= 5 ? `Wrong PIN. Locked for ${Math.round((f.until - Date.now()) / 1000)} s.` : `Wrong PIN (${f.n}/5).`;
       }
     });
   }
@@ -1635,7 +1664,7 @@
   window.addEventListener('error', (e) => { if (e.message && !/ResizeObserver/.test(e.message)) console.warn('HELIOS error:', e.message); });
 
   // ---------- boot ----------
-  try { if (localStorage.getItem('helios.night') === '1') document.body.classList.add('night'); } catch (e) { /* ignore */ }
+  H.theme.apply();
   const initial = location.hash.slice(1);
   if (NAV.some((n) => n.id === initial)) ui.view = initial;
   if (H.vault && H.vault.enabled() && !H.vault.unlocked()) { const b = $('#boot'); if (b) b.remove(); showLock(); }

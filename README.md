@@ -73,12 +73,40 @@ New capabilities live in `js/features/` and plug into the app via a small API (`
 ## Safety, privacy and accessibility
 
 - **Urgent findings follow you.** Any Urgent finding (for example chest pain reported in a check-in) shows a sticky alert bar on every screen, with its protocol and triage, until it is acknowledged.
-- **Privacy lock.** Settings → Privacy lock sets a PIN. The record is then stored only as AES-256-GCM ciphertext (key from PBKDF2-SHA-256, 310,000 iterations). The plain-text copy is removed, the app auto-locks after inactivity, and repeated wrong PINs are rate-limited. Forgetting the PIN means losing the data, so keep an exported backup.
+- **Privacy lock.** Settings → Privacy lock sets a PIN or passphrase (with a strength guide). Wrong attempts are limited across reloads, with doubling waits. The record is then stored only as AES-256-GCM ciphertext (key from PBKDF2-SHA-256, 310,000 iterations). The plain-text copy is removed, the app auto-locks after inactivity, and repeated wrong PINs are rate-limited. Forgetting the PIN means losing the data, so keep an exported backup.
 - **Hardened input.** Saved data, restored backups and synced bundles all pass through a sanitizer (`js/sanitize.js`). Unknown keys are dropped, text is bounded, and numbers and dates are validated, so a malformed or hostile file can't crash the app or inject markup. Profile text is also escaped wherever it is shown.
 - **Resilient storage.** Older or damaged saved data is normalised on load. A failed save (full or blocked storage) is reported instead of silently lost. A screen that throws shows a recoverable message instead of a blank page.
 - **Accessibility.** Text colours meet a 4.5:1 contrast ratio. Dialogs trap focus and close with Escape. Page changes are announced to screen readers, and every trend chart has a table view. Blur effects are dropped when the system asks for reduced transparency, and on phones for performance.
 - **Guided tour** on first run (replay from Settings or the command palette).
 - **Exports.** Any indicator as CSV from Trends, and all your readings as a re-importable CSV from My profile.
+
+## Terms & Conditions
+
+HELIOS asks every user to accept its [Terms & Conditions](TERMS.md) on first run, and again whenever the version changes. The terms cover:
+- that HELIOS is not a medical device, plus emergency guidance
+- prototype and model limits
+- what data leaves the device and when
+- security limits
+- third-party data and trademark notices
+- no warranty and limitation of liability
+
+The in-app **Terms & privacy** page, the acceptance screen and `TERMS.md` are all generated from `js/features/terms.js`. After editing it, run `npm run terms`; a test fails if `TERMS.md` is out of date.
+
+> The terms are a careful starting point, not legal advice. Have them reviewed by a lawyer, and add governing law and a named operator, before any real deployment.
+
+## Themes
+
+Dark (default), **Day** (a light theme for bright cabins), **Sleep** (red, low blue light) or **Follow system**, set in Settings. The moon button toggles Sleep.
+
+## Accessibility checks
+
+`tools/a11y-audit.js` is a dependency-free in-page audit. It checks control names, form labels, WCAG AA text contrast, duplicate ids, heading order, image alt text and ARIA references. Run it from the browser console:
+
+```js
+await import('/tools/a11y-audit.js').then((m) => m.audit())
+```
+
+All screens pass in all three themes. This complements testing with VoiceOver or NVDA; it doesn't replace it.
 
 ## Tests
 

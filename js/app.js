@@ -19,6 +19,7 @@
     pvt: P('<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>'),
     protocols: P('<path d="M4 4h11a3 3 0 013 3v13H7a3 3 0 01-3-3z"/><path d="M8 9h6M8 13h6"/>'),
     report: P('<path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/>'),
+    validation: P('<path d="M9 3h6M10 3v6l-5 9a2 2 0 001.8 3h10.4a2 2 0 001.8-3l-5-9V3"/><path d="M7.5 14h9"/>'),
     crew: P('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0113 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.5a5 5 0 016 5"/>'),
     heart: P('<path d="M12 20s-7-4.4-7-10a4 4 0 017-2.6A4 4 0 0119 10c0 5.6-7 10-7 10z"/><path d="M7 12h3l1.5-2.5 2 4 1.5-1.5H17"/>'),
     bone: P('<path d="M8.5 6.5a2.5 2.5 0 10-3.5 3.5l9 9a2.5 2.5 0 103.5-3.5l-9-9z"/><path d="M15.5 6.5a2.5 2.5 0 113.5 3.5M5 14a2.5 2.5 0 103.5 3.5"/>'),
@@ -42,6 +43,7 @@
     { id: 'protocols', label: 'Protocols' },
     { id: 'report', label: 'Downlink report', short: 'Report' },
     { id: 'crew', label: 'Crew (CMO)', short: 'Crew' },
+    { id: 'validation', label: 'Model validation', short: 'Validate' },
   ];
 
   const SYMPTOMS = [
@@ -61,7 +63,7 @@
   const store = loadStore();
   function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); } catch (e) { /* ignore */ } }
 
-  const ui = { crewId: 'nakamura', view: 'overview', domain: 'behav', ind: 'sleep', range: 60, protocol: 'P-SLP-01', checkinDone: false };
+  const ui = { crewId: 'nakamura', view: 'overview', domain: 'behav', ind: 'sleep', range: 60, protocol: 'P-SLP-01', checkinDone: false, vrun: 'run3', vmethod: 'signature' };
   let ds, A;
 
   const todayCheckin = (id) => ((store.checkins[id] || {})[M.day]) || null;
@@ -142,7 +144,7 @@
     renderNav();
     renderTopbar();
     const v = $('#view');
-    const views = { overview: vOverview, trends: vTrends, checkin: vCheckin, pvt: vPvt, protocols: vProtocols, report: vReport, crew: vCrew };
+    const views = { overview: vOverview, trends: vTrends, checkin: vCheckin, pvt: vPvt, protocols: vProtocols, report: vReport, crew: vCrew, validation: vValidation };
     v.innerHTML = (views[ui.view] || vOverview)();
     if (ui.view === 'trends') mountTrendChart();
   }
@@ -721,6 +723,115 @@
       <div class="crew-findings">${H.CREW.map((c) => A[c.id].insights.filter((i) => !i.private).map((i) => `<button class="cf lvl-${lv(i.level)}" data-action="set-crew" data-id="${c.id}">${pill(i.level)}<span><b>${esc(c.name)}</b> — ${esc(i.title)}</span>${ICON.arrow}</button>`).join('')).join('')}</div>`;
   }
 
+  // ---------- validation on real data ----------
+  const PANEL_NAME = { cbc: 'Blood count', cmp: 'Metabolic', cardio: 'Cardiovascular', immune: 'Cytokine' };
+
+  function aurocBar(v) {
+    const pct = Math.max(0, Math.min(1, v)) * 100;
+    const cls = v >= 0.75 ? 'good' : v > 0.55 ? 'fair' : 'poor';
+    return `<span class="auc ${cls}"><span class="auc-track"><i style="width:${pct}%"></i><b style="left:50%"></b></span><span class="mono">${v.toFixed(2)}</span></span>`;
+  }
+
+  function scoreStrip(m) {
+    const scores = m.rows.map((r) => r.score);
+    let lo = Math.min(...scores), hi = Math.max(...scores);
+    if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+    const W = 640, rowH = 46, L = 64, R = 20, Hh = 4 * rowH + 28;
+    const X = (v) => L + ((v - lo) / (hi - lo)) * (W - L - R);
+    const crew = ['C001', 'C002', 'C003', 'C004'];
+    let svg = `<svg class="strip" viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Scores per crew member and blood draw">`;
+    svg += `<text class="tick" x="${L}" y="${Hh - 6}">lower score · looks normal</text><text class="tick" x="${W - R}" y="${Hh - 6}" text-anchor="end">higher score · looks abnormal</text>`;
+    crew.forEach((c, i) => {
+      const y = 18 + i * rowH;
+      svg += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/><text class="tick" x="${L - 12}" y="${y + 4}" text-anchor="end">${c}</text>`;
+      m.rows.filter((r) => r.subject === c).sort((a, b) => a.label - b.label).forEach((r) => {
+        const pre = r.t.startsWith('L');
+        svg += `<g class="sdot ${r.label ? 'pos' : pre ? 'pre' : 'rec'}"><circle cx="${X(r.score)}" cy="${y}" r="${r.label ? 8 : 6}"><title>${c} ${r.t}: ${r.score}</title></circle>${r.label ? `<text x="${X(r.score)}" y="${y - 13}" text-anchor="middle">R+1</text>` : ''}</g>`;
+      });
+    });
+    return svg + '</svg>';
+  }
+
+  function vValidation() {
+    const V = H.VALIDATION;
+    if (!V) return '<div class="empty"><div><b>No validation results.</b><p>Run <code>node tools/evaluate.js</code> to generate them.</p></div></div>';
+    const run = V.runs.find((r) => r.config.id === ui.vrun) || V.runs[V.runs.length - 1];
+    const m = run.results.find((x) => x.id === ui.vmethod) || run.results[0];
+    const best = V.runs.flatMap((r) => r.results.map((x) => ({ ...x, run: r }))).sort((a, b) => b.auroc - a.auroc)[0];
+    const helios = V.runs[0].results.find((x) => x.id === 'rules');
+    const stat = (k, v, sub) => `<div class="stat"><span class="k">${k}</span><span class="v mono">${v}</span>${sub ? `<small>${sub}</small>` : ''}</div>`;
+    const maxZ = Math.max(...run.markers.map((x) => Math.abs(x.meanZ)));
+
+    return `
+      <div class="page-head"><div><p class="eyebrow">Model validation · real astronaut data</p><h1>How well do the models work on real crew blood data?</h1>
+        <p class="lede">HELIOS's detection methods, tested on open clinical data from the four SpaceX Inspiration4 crew members, published by NASA. The task: using each person's own preflight blood draws as their baseline, single out the draw taken the day after landing (R+1) from normal draws.</p></div></div>
+
+      <section class="v-hero">
+        <div class="v-headline">
+          <span class="eyebrow">Best result</span>
+          <div class="v-big mono">${best.auroc.toFixed(2)}<small> AUROC</small></div>
+          <p><b>${esc(best.name)}</b> on ${best.run.dataset.features} lab values (${esc(best.run.config.label.split(' · ')[0])}). It ranked the R+1 draw as most abnormal for <b>${best.top1} of ${best.crew}</b> crew members (p = ${best.pValue.toFixed(3)}, uncorrected).</p>
+        </div>
+        <div class="v-headline muted-card">
+          <span class="eyebrow">Current HELIOS rules</span>
+          <div class="v-big mono t-action">${helios.auroc.toFixed(2)}<small> AUROC</small></div>
+          <p>Counting values 3+ SD from personal baseline does <b>no better than chance</b> on lab panels with only three baseline draws (0.50 = chance).</p>
+        </div>
+        <div class="stats v-data">
+          ${stat('Crew', V.dataset.crew, 'Inspiration4')}
+          ${stat('Blood draws', V.dataset.crew * V.dataset.timepoints.length, '3 pre · 4 post')}
+          ${stat('Lab values', V.dataset.features, '4 panels')}
+          ${stat('Test cases', `${V.dataset.positives}+${V.dataset.negatives}`, 'R+1 vs normal')}
+        </div>
+      </section>
+
+      <div class="card">
+        <div class="detail-head">
+          <div><h2>Results by method</h2><p class="muted small">${esc(V.protocol)}</p></div>
+        </div>
+        <div class="seg v-runs">${V.runs.map((r) => `<button class="${r.config.id === run.config.id ? 'active' : ''}" data-action="vrun" data-id="${r.config.id}">${esc(r.config.label.split(' · ')[0])}<small>${esc(r.config.label.split(' · ')[1])}</small></button>`).join('')}</div>
+        <div class="table-wrap">
+          <table class="table v-table">
+            <thead><tr><th>Method</th><th>AUROC</th><th title="AUROC among post-flight draws only">Post-flight only</th><th>p</th><th>Sensitivity</th><th>Specificity</th><th title="Crew members whose R+1 draw scored highest of their post-flight draws">R+1 ranked first</th></tr></thead>
+            <tbody>${run.results.map((x) => `<tr class="${x.id === m.id ? 'active' : ''}" data-action="vmethod" data-id="${x.id}">
+              <td><b>${esc(x.name)}</b><small>${esc(x.kind)}</small></td>
+              <td>${aurocBar(x.auroc)}</td><td class="mono">${x.aurocPostOnly.toFixed(2)}</td>
+              <td class="mono ${x.pValue < 0.05 ? 't-nominal' : 'muted'}">${x.pValue.toFixed(3)}</td>
+              <td class="mono">${Math.round(x.sensitivity * 100)}%</td><td class="mono">${Math.round(x.specificity * 100)}%</td>
+              <td class="mono">${x.top1} / ${x.crew}</td></tr>`).join('')}</tbody>
+          </table>
+        </div>
+        <p class="muted small">AUROC: 1.0 = perfect ranking, 0.5 = chance. Sensitivity and specificity use a threshold learned on the other three crew. p is from a 20,000-label permutation test and is not corrected for the 15 method × run combinations.</p>
+      </div>
+
+      <div class="v-grid">
+        <div class="card">
+          <h3>${esc(m.name)} · scores per draw</h3>
+          <p class="muted small">${esc(m.desc)}</p>
+          ${scoreStrip(m)}
+          <div class="legend-row"><span><i class="sw pos"></i>R+1 (day after landing)</span><span><i class="sw rec"></i>Recovery R+45/82/194</span><span><i class="sw pre"></i>Preflight</span></div>
+        </div>
+        <div class="card">
+          <h3>Largest changes the day after landing</h3>
+          <p class="muted small">Average shift from each person's preflight baseline at R+1 (${esc(run.config.label.split(' · ')[0])}).</p>
+          <ul class="markers">${run.markers.slice(0, 10).map((x) => `<li><span>${esc(x.name.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()))}<small>${PANEL_NAME[x.panel]} · ${x.sameDir}/4 crew same direction</small></span>
+            <span class="zbar ${x.meanZ < 0 ? 'neg' : 'pos'}"><i style="width:${(Math.abs(x.meanZ) / maxZ) * 50}%"></i></span><span class="mono">${x.meanZ > 0 ? '+' : ''}${x.meanZ.toFixed(1)} SD</span></li>`).join('')}</ul>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>What this means — and what it doesn't</h3>
+        <ul class="v-notes">
+          <li><b>A supervised spaceflight signature works better than outlier counting.</b> Learning which lab values move together after flight (on the other three crew) picked out R+1 for 3 of 4 people. Counting individual outliers did not.</li>
+          <li><b>The research cytokine panel added noise.</b> Restricting to standard blood count and metabolic values (what an on-board analyzer measures) improved the supervised models; run 3 was chosen after seeing runs 1–2, so its score is optimistic.</li>
+          <li><b>The learned threshold is not ready for alarms.</b> At the threshold learned on the other crew, sensitivity is 0–25%: the models rank R+1 well but scores are not yet calibrated across people.</li>
+          <li><b>This is 4 people and a 3-day flight.</b> No result here is statistically robust after correcting for multiple comparisons. Long-duration data (e.g. NASA's Twins Study, ISS crews) is available only by application.</li>
+          <li><b>Wearable indicators are not validated here.</b> No open in-flight heart-rate, sleep or PVT data exists for astronauts, so those parts of HELIOS remain tested on simulated data only.</li>
+        </ul>
+        <p class="muted small">Data: NASA Open Science Data Repository — ${V.dataset.studies.map((s) => `${s.label} (${s.osd})`).join(', ')}. Reproduce with <code>node tools/evaluate.js</code>.</p>
+      </div>`;
+  }
+
   // ---------- interactions ----------
   function findInsight(id) { return me().insights.find((i) => i.id === id); }
 
@@ -790,6 +901,8 @@
       setTimeout(() => URL.revokeObjectURL(link.href), 1000);
     }
     else if (act === 'print') window.print();
+    else if (act === 'vrun') { ui.vrun = el.dataset.id; render(); }
+    else if (act === 'vmethod') { ui.vmethod = el.dataset.id; render(); }
   });
 
   document.addEventListener('change', (e) => {

@@ -157,8 +157,8 @@ const METHODS = [
   {
     id: 'signature', name: 'Spaceflight-signature model', kind: 'ML · supervised',
     desc: 'Learns the average deviation pattern of R+1 vs. normal samples on the training crew (top 20 features by t-statistic), then scores how strongly a new sample shows that pattern.',
-    fit: (train) => {
-      const k = 20;
+    fit: (train, ctx = {}) => {
+      const k = Math.min(ctx.k || 20, train[0].z.length);
       const P = train.filter((x) => x.label), N = train.filter((x) => !x.label);
       const p = train[0].z.length;
       const stats = [];
@@ -178,8 +178,8 @@ const METHODS = [
   {
     id: 'logreg', name: 'Logistic regression (L2)', kind: 'ML · supervised',
     desc: 'L2-regularised logistic regression on the 20 most discriminative personal-baseline z-scores, trained on the other three crew.',
-    fit: (train) => {
-      const k = 20, lambda = 1.0, P = train.filter((x) => x.label), N = train.filter((x) => !x.label);
+    fit: (train, ctx = {}) => {
+      const k = Math.min(ctx.k || 20, train[0].z.length), lambda = 1.0, P = train.filter((x) => x.label), N = train.filter((x) => !x.label);
       const p = train[0].z.length, stats = [];
       for (let j = 0; j < p; j++) {
         const a = P.map((x) => x.z[j]), b = N.map((x) => x.z[j]);
@@ -289,7 +289,86 @@ const CONFIGS = [
 ];
 
 const runs = CONFIGS.map(evaluate);
-const out = { generated: runs[0].generated, dataset: runs[0].dataset, protocol: runs[0].protocol, runs };
+
+/*
+ * Nested leave-one-crew-out model search. For each held-out astronaut, every candidate
+ * configuration (panels × model × number of features) is scored by an inner leave-one-crew-out
+ * loop over the remaining three; the winner is retrained on those three and only then applied
+ * to the held-out person. The outer score is therefore an honest estimate of the whole search.
+ */
+function nested() {
+  const base = load();
+  const PANELSETS = { clinical: ['cbc', 'cmp'], 'clinical+cardio': ['cbc', 'cmp', 'cardio'], all: ['cbc', 'cmp', 'cardio', 'immune'] };
+  const grid = [];
+  for (const ps of Object.keys(PANELSETS)) for (const mid of ['signature', 'logreg']) for (const k of [5, 10, 20, 40]) grid.push({ ps, mid, k });
+  const view = (ps) => ({ ...base, features: base.features.filter((f) => PANELSETS[ps].includes(base.meta[f].panel)) });
+  const views = Object.fromEntries(Object.keys(PANELSETS).map((ps) => [ps, view(ps)]));
+  const cfg = { correct: true };
+  const method = (id) => METHODS.find((m) => m.id === id);
+
+  // Train on `trainCrew`, return scored samples for `testCrew`.
+  function trainAndScore(c, trainCrew, testCrew) {
+    const D = views[c.ps];
+    const sd = D.features.map((f) => pooledSD(D, f, trainCrew));
+    const train = trainCrew.flatMap((s) => samplesFor(D, s, sd, cfg));
+    const score = method(c.mid).fit(train, { D, k: c.k });
+    return testCrew.flatMap((s) => samplesFor(D, s, sd, cfg).map((x) => ({ subject: s, t: x.t, label: x.label, score: score(x) })));
+  }
+
+  // Ensemble: rank-average all configurations (no selection step, so nothing to overfit).
+  const ens = [];
+  for (const held of base.subjects) {
+    const T = base.subjects.filter((s) => s !== held);
+    const per = grid.map((c) => trainAndScore(c, T, [held]));
+    per[0].forEach((r, i) => {
+      // Rank each config's scores within this person so scales are comparable.
+      const rk = per.map((list) => list.filter((x) => x.score < list[i].score).length / (list.length - 1));
+      ens.push({ ...r, score: mean(rk) });
+    });
+  }
+  const ensPost = ens.filter((r) => POST.includes(r.t));
+  const ensAuc = auroc(ens.map((r) => r.score), ens.map((r) => r.label));
+  const ensemble = {
+    auroc: +ensAuc.toFixed(3), aurocPostOnly: +auroc(ensPost.map((r) => r.score), ensPost.map((r) => r.label)).toFixed(3),
+    pValue: +permutationP(ens.map((r) => r.score), ens.map((r) => r.label), ensAuc).toFixed(4),
+    top1: base.subjects.filter((s) => ens.filter((r) => r.subject === s && POST.includes(r.t)).sort((a, b) => b.score - a.score)[0].t === 'R+1').length,
+    rows: ens.map((r) => ({ ...r, score: +r.score.toFixed(3) })),
+  };
+
+  const rows = [], chosen = [];
+  for (const held of base.subjects) {
+    const T = base.subjects.filter((s) => s !== held);
+    let best = null;
+    for (const c of grid) {
+      const inner = T.flatMap((t) => trainAndScore(c, T.filter((x) => x !== t), [t]));
+      const a = auroc(inner.map((r) => r.score), inner.map((r) => r.label));
+      if (!best || a > best.a + 1e-9 || (Math.abs(a - best.a) < 1e-9 && c.k < best.c.k)) best = { c, a };
+    }
+    chosen.push({ heldOut: held, ...best.c, innerAuroc: +best.a.toFixed(3) });
+    trainAndScore(best.c, T, [held]).forEach((r) => rows.push(r));
+  }
+  const scores = rows.map((r) => r.score), labels = rows.map((r) => r.label);
+  const auc = auroc(scores, labels);
+  const post = rows.filter((r) => POST.includes(r.t));
+  const top1 = base.subjects.filter((s) => rows.filter((r) => r.subject === s && POST.includes(r.t)).sort((a, b) => b.score - a.score)[0].t === 'R+1').length;
+  // Per-person calibration: compare each post-flight score with that person's own preflight scores.
+  // Flag when it exceeds every preflight score — needs no threshold transferred between people.
+  const flags = base.subjects.flatMap((s) => {
+    const mine = rows.filter((r) => r.subject === s), preMax = Math.max(...mine.filter((r) => PRE.includes(r.t)).map((r) => r.score));
+    return mine.filter((r) => POST.includes(r.t)).map((r) => ({ ...r, flagged: r.score > preMax }));
+  });
+  const tp = flags.filter((r) => r.label && r.flagged).length, fp = flags.filter((r) => !r.label && r.flagged).length;
+  return {
+    grid: grid.length, chosen, ensemble,
+    auroc: +auc.toFixed(3), aurocPostOnly: +auroc(post.map((r) => r.score), post.map((r) => r.label)).toFixed(3),
+    pValue: +permutationP(scores, labels, auc).toFixed(4), top1, crew: base.subjects.length,
+    personal: { sensitivity: +(tp / 4).toFixed(3), specificity: +((12 - fp) / 12).toFixed(3), tp, fp, note: 'Post-flight draw flagged when it scores above all of that person\'s own preflight draws.' },
+    rows: rows.map((r) => ({ ...r, score: +r.score.toFixed(3) })),
+  };
+}
+
+const nestedResult = nested();
+const out = { generated: runs[0].generated, dataset: runs[0].dataset, protocol: runs[0].protocol, runs, nested: nestedResult };
 fs.writeFileSync(path.join(ROOT, 'data', 'validation.json'), JSON.stringify(out, null, 2));
 fs.writeFileSync(path.join(ROOT, 'js', 'validation-data.js'),
   '/* Generated by tools/evaluate.js from NASA OSDR Inspiration4 data. Do not edit. */\nwindow.H = window.H || {};\nwindow.H.VALIDATION = ' + JSON.stringify(out) + ';\n');
@@ -299,4 +378,7 @@ runs.forEach((r) => {
   console.log('  ' + 'Method'.padEnd(36), 'AUROC  post   p      Sens   Spec   Top-1');
   r.results.forEach((m) => console.log('  ' + m.name.padEnd(36), [m.auroc, m.aurocPostOnly, m.pValue, m.sensitivity, m.specificity].map((x) => String(x).padEnd(6)).join(' '), `${m.top1}/${m.crew}`));
 });
+console.log(`\nNested model search (${nestedResult.grid} configs): AUROC ${nestedResult.auroc} (post-only ${nestedResult.aurocPostOnly}, p ${nestedResult.pValue}), R+1 first ${nestedResult.top1}/4, personal flag sens ${nestedResult.personal.sensitivity} spec ${nestedResult.personal.specificity}`);
+console.log(`Ensemble of all ${nestedResult.grid}: AUROC ${nestedResult.ensemble.auroc} (post-only ${nestedResult.ensemble.aurocPostOnly}, p ${nestedResult.ensemble.pValue}), R+1 first ${nestedResult.ensemble.top1}/4`);
+nestedResult.chosen.forEach((c) => console.log('  held out', c.heldOut, '→', c.ps, c.mid, 'k=' + c.k, 'inner AUROC', c.innerAuroc));
 console.log('\nLargest R+1 shifts (run 3):'); runs[2].markers.forEach((m) => console.log(' ', m.feature.padEnd(36), m.meanZ, `${m.sameDir}/4 same direction`));

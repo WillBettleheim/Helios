@@ -1,0 +1,12 @@
+{
+  "name": "helios-crew-health",
+  "version": "1.0.0",
+  "private": true,
+  "description": "On-board crew health monitoring prototype for long-duration spaceflight.",
+  "scripts": {
+    "start": "python3 -m http.server 8173",
+    "test": "node --test test/",
+    "evaluate": "node tools/evaluate.js",
+    "sync-server": "node tools/sync-server.js"
+  }
+}

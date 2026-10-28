@@ -1624,9 +1624,37 @@
       <h1>HELIOS</h1><p>${T('Your health record is encrypted on this device.')}</p>
       <label for="lock-pin" class="sr-only">PIN</label>
       <input id="lock-pin" type="password" autocomplete="current-password" placeholder="PIN or passphrase" maxlength="128" required>
-      <button class="btn primary" type="submit">${T('Unlock')}</button><p class="lock-msg" role="status"></p></form>`;
+      <button class="btn primary" type="submit">${T('Unlock')}</button><p class="lock-msg" role="status"></p>
+      <button type="button" class="link lock-forgot" aria-expanded="false" aria-controls="lock-reset">${T('Forgot PIN?')}</button>
+      <div id="lock-reset" class="lock-reset" hidden>
+        <p><b>${T('Your data cannot be recovered without the PIN.')}</b> ${T('It is encrypted on this device and nobody — including the HELIOS developers — holds a copy of the key.')}</p>
+        <p>${T('You can erase it and start fresh, then restore a backup from My profile if you exported one.')}</p>
+        <label for="lock-erase">${T('Type ERASE to confirm')}</label>
+        <input id="lock-erase" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <button type="button" class="btn danger-btn" data-erase disabled>${T('Erase my data and start fresh')}</button>
+      </div></form>`;
     document.body.appendChild(el);
     const input = el.querySelector('input'), msg = el.querySelector('.lock-msg');
+    // Forgot PIN: the only way out is erasing the encrypted record (it cannot be decrypted).
+    const forgot = el.querySelector('.lock-forgot'), reset = el.querySelector('#lock-reset');
+    const confirmBox = el.querySelector('#lock-erase'), eraseBtn = el.querySelector('[data-erase]');
+    forgot.addEventListener('click', () => {
+      reset.hidden = !reset.hidden;
+      forgot.setAttribute('aria-expanded', String(!reset.hidden));
+      if (!reset.hidden) confirmBox.focus();
+    });
+    confirmBox.addEventListener('input', () => { eraseBtn.disabled = confirmBox.value.trim().toUpperCase() !== 'ERASE'; });
+    confirmBox.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (!eraseBtn.disabled) eraseBtn.click(); } });
+    eraseBtn.addEventListener('click', () => {
+      if (confirmBox.value.trim().toUpperCase() !== 'ERASE') return;
+      try {
+        ['helios.vault', 'helios.lockfails', STORE_KEY].forEach((k) => localStorage.removeItem(k));
+        // Keep the acceptance of the current terms so the person isn't asked again immediately.
+        localStorage.setItem(STORE_KEY, JSON.stringify({ v: 1, prefs: { termsVersion: (H.TERMS || {}).version || '', termsAt: Date.now(), toured: true } }));
+      } catch (err) { /* storage blocked */ }
+      try { sessionStorage.removeItem('helios.booted'); } catch (err) { /* ignore */ }
+      location.reload();
+    });
     input.focus();
     el.querySelector('form').addEventListener('submit', async (e) => {
       e.preventDefault();

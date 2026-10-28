@@ -49,6 +49,41 @@ There is also a **sleep-period display** (moon icon): a red-shifted, low-blue-li
 4. **Rules.** These combine indicators and symptoms into findings. For example, sleep loss together with slower PVT gives "Sleep loss is slowing your reactions", and headaches together with high cabin CO₂ point to the scrubber fault. Each finding lists its evidence, the steps to take, a linked protocol and a recommended route: self-manage, CMO, flight surgeon, or immediate crew response.
 5. **Readiness** is 100 minus capped penalties for each domain.
 
+## Validation on real astronaut data
+
+`tools/evaluate.js` tests the detection methods on open clinical data from the four
+**SpaceX Inspiration4** crew, taken from NASA's Open Science Data Repository:
+
+- complete blood count (OSD-569)
+- metabolic panel, serum cardiovascular panel and serum immune panel (OSD-575)
+
+Each crew member has 7 blood draws: 3 preflight and 4 post-flight. The raw CSVs are in `data/osdr/`.
+
+**Task:** using each person's own preflight draws as the baseline, single out the draw taken the
+day after landing (R+1) from normal draws. Normal draws are the recovery draws, plus each preflight
+draw scored against the other two. That gives 4 positives and 24 negatives.
+
+**Method:** leave-one-crew-out. The held-out person is never used to fit SDs, select features,
+train weights or set thresholds.
+
+```bash
+node tools/evaluate.js   # writes data/validation.json and js/validation-data.js
+```
+
+| Run 3 (blood count + metabolic panel, corrected) | AUROC | AUROC (post-flight only) | R+1 ranked first |
+|---|---|---|---|
+| Clinical reference ranges | 0.44 | 0.45 | 1 / 4 |
+| HELIOS rules (personal baseline, ≥3 SD) | 0.34 | 0.38 | 0 / 4 |
+| Unsupervised anomaly score | 0.35 | 0.40 | 0 / 4 |
+| **Spaceflight-signature model** | **0.79** (p = 0.037) | **0.92** | **3 / 4** |
+| Logistic regression (L2) | 0.73 | 0.88 | 3 / 4 |
+
+Run 1 (all 113 lab values, chosen before seeing any results) peaked at an AUROC of 0.64. Runs 2–3
+were added after looking at run 1, so their scores are optimistic. With 4 people, no result is
+significant once corrected for multiple comparisons. At the threshold learned on the other crew,
+sensitivity is 0–25%, so the models rank well but are not calibrated for alarms. The app's
+**Model validation** page shows every run.
+
 ## Demo scenario (mission day 147)
 
 | Crew | Story |

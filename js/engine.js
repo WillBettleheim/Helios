@@ -157,11 +157,11 @@ window.H = window.H || {};
         actions: ['Check CO₂ at your sleep station', 'Increase local ventilation', 'Hydrate and log the episode'] });
     }
 
-    const beh = Math.max(S('mood'), S('stress'), sym('isolated') ? 1 : 0);
+    const beh = Math.max(S('mood'), S('stress'), S('social'), sym('isolated') ? 1 : 0);
     if (beh > 0) {
-      add({ id: 'behav', domain: 'behav', level: beh, title: 'Mood and stress outside your usual range',
+      add({ id: 'behav', domain: 'behav', level: beh, title: S('social') > 0 && S('mood') === 0 && S('stress') === 0 ? 'Feeling less connected to the crew' : S('social') > 0 ? 'Mood, stress and connection outside your usual range' : 'Mood and stress outside your usual range',
         summary: 'Your self-reports show a sustained shift. This is common on long missions and responds well to early action. These details stay private unless you share them.',
-        evidence: ev('mood', 'stress'), protocol: 'P-BHP-01', escalate: beh >= 2 ? 2 : 0, private: true,
+        evidence: ev('mood', 'stress', 'social'), protocol: 'P-BHP-01', escalate: beh >= 2 ? 2 : 0, private: true,
         actions: ['Book a private psychological conference', 'Block personal time today', 'Check in with a crewmate'] });
     }
 
@@ -302,9 +302,10 @@ window.H = window.H || {};
     conservative: { label: 'Conservative', zMon: 2.5, zAct: 3.5, note: 'Fewer alerts, only clear deviations' },
   };
 
-  function assessEnv(ds) {
+  function assessEnv(ds, day) {
     const env = {};
-    H.ENV_INDICATORS.forEach((ind) => { env[ind.id] = assessIndicator(ind, ds.env[ind.id], H.MISSION.day, {}); });
+    const d = Math.min(day || H.MISSION.day, H.MISSION.day);
+    H.ENV_INDICATORS.forEach((ind) => { env[ind.id] = assessIndicator(ind, ds.env[ind.id], d, {}); });
     return env;
   }
 
@@ -314,7 +315,7 @@ window.H = window.H || {};
     const ctx = Object.assign({}, cd, opts);
     const inds = {};
     H.INDICATORS.forEach((ind) => { inds[ind.id] = assessIndicator(ind, cd.series[ind.id], day, ctx); });
-    const env = assessEnv(ds);
+    const env = assessEnv(ds, opts.replayDay || (c.personal ? H.MISSION.day : day));
 
     const domains = H.DOMAINS.map((dm) => {
       const list = H.INDICATORS.filter((i) => i.domain === dm.id).map((i) => inds[i.id]);

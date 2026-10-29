@@ -42,7 +42,15 @@ window.H = window.H || {};
       const hi = heliosFlags.findIndex((f, i) => f && sustained(heliosFlags, i));
       const li = limit == null ? -1 : limitFlags.findIndex((f, i) => f && sustained(limitFlags, i));
       if (hi < 0) return;
-      leads.push({ ind, helios: days[hi].d, limit: li >= 0 ? days[li].d : null, hasLimit: limit != null, lead: li >= 0 ? days[li].d - days[hi].d : null });
+      // Weekly system: judged at the end of each complete week, same baseline.
+      let weekly = null;
+      if (H.weekly) {
+        for (let d = 7 * Math.ceil(FROM / 7); d <= H.MISSION.day && weekly == null; d += 7) {
+          const w = H.weekly.analyze(ind, ds.crew[id].series[ind.id], final.base, d);
+          if (w.status === 'shift' || w.status === 'drift') weekly = d;
+        }
+      }
+      leads.push({ ind, helios: days[hi].d, weekly, limit: li >= 0 ? days[li].d : null, hasLimit: limit != null, lead: li >= 0 ? days[li].d - days[hi].d : null });
     });
     const withBoth = leads.filter((l) => l.lead != null);
     const lead = withBoth.map((l) => l.lead).sort((a, b) => a - b);
@@ -111,11 +119,11 @@ window.H = window.H || {};
       </div>
 
       <div class="card table-wrap"><h2 class="ct">${T('Early-warning lead time by indicator')}</h2>
-        <table class="table"><thead><tr><th>Indicator</th><th>HELIOS flagged</th><th>Fixed limit crossed</th><th>Lead</th></tr></thead>
-        <tbody>${h.leads.sort((a, b) => a.helios - b.helios).map((l) => `<tr><td>${esc(l.ind.name)}</td><td class="mono">D${l.helios}</td>
+        <table class="table"><thead><tr><th>Indicator</th><th>Daily system</th><th>Weekly system</th><th>Fixed limit crossed</th><th>Lead</th></tr></thead>
+        <tbody>${h.leads.sort((a, b) => a.helios - b.helios).map((l) => `<tr><td>${esc(l.ind.name)}</td><td class="mono">D${l.helios}</td><td class="mono">${l.weekly ? `D${l.weekly}` : '<span class="muted">—</span>'}</td>
           <td class="mono">${l.limit ? `D${l.limit}` : l.hasLimit ? `<span class="muted">not by D${H.MISSION.day}</span>` : '<span class="muted">no fixed limit</span>'}</td>
-          <td class="mono">${l.lead != null ? `<b class="${l.lead > 0 ? 't-nominal' : ''}">${l.lead > 0 ? '+' : ''}${l.lead} d</b>` : '—'}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No problems developed for this crew member.</td></tr>'}</tbody></table>
-        <p class="muted small">Simulated mission data. A flag counts only if it holds on at least 3 of the next 4 days. "Fixed limit" uses each indicator's conventional monitoring threshold — what a non-personalised system would alarm on.</p></div>`;
+          <td class="mono">${l.lead != null ? `<b class="${l.lead > 0 ? 't-nominal' : ''}">${l.lead > 0 ? '+' : ''}${l.lead} d</b>` : '—'}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No problems developed for this crew member.</td></tr>'}</tbody></table>
+        <p class="muted small">Simulated mission data. The weekly system is judged at the end of each complete mission week, so it is slower by design but independent of day-to-day noise. A daily flag counts only if it holds on at least 3 of the next 4 days. "Fixed limit" uses each indicator's conventional monitoring threshold — what a non-personalised system would alarm on.</p></div>`;
   }
 
   function mount() { if (st.playing) schedule(); }

@@ -78,5 +78,5 @@ test('replay reports when the weekly system first flagged each problem', () => {
   assert.ok(sbp.weekly < sbp.limit, 'weekly system also beats the fixed limit for blood pressure');
   assert.equal(X.replay.history('reyes').leads.find((l) => l.ind.id === 'cumdose').weekly, null, 'no trend flag on a cumulative total');
   const rhr = X.replay.history('reyes').leads.find((l) => l.ind.id === 'rhr');
-  assert.ok(rhr.weekly < rhr.helios, 'slow resting-HR drift: weekly system earlier than daily');
+  assert.ok(rhr.helios <= rhr.weekly, 'the daily detector includes the weekly tests, so it is never later');
 });

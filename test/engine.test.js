@@ -32,11 +32,24 @@ test('absolute limits raise status even without a baseline', () => {
 test('sensitivity thresholds change the verdict', () => {
   const ind = H.INDICATORS.find((i) => i.id === 'rhr');
   const arr = new Array(11).fill(null);
-  for (let d = 1; d <= 10; d++) arr[d] = 64.7;     // 2.23 SD above 58 ± 3
+  for (let d = 1; d <= 10; d++) arr[d] = 64;        // steady 2 SD above 58 ± 3 for 10 days
+  // Detector v2: smoothed (EWMA) deviation ≈ 3.5 alert units here.
   const at = (s) => H.assessIndicator(ind, arr, 10, H.SENSITIVITY[s]).status;
   assert.equal(at('sensitive'), 1);
   assert.equal(at('standard'), 1);
   assert.equal(at('conservative'), 0);
+  // A single 1-day blip does not alert, but a jump of ≥ 4 SD does immediately.
+  const blip = new Array(11).fill(58); blip[0] = null; blip[10] = 66;
+  assert.equal(H.assessIndicator(ind, blip, 10, H.SENSITIVITY.standard).status, 0);
+  const jump = new Array(11).fill(58); jump[0] = null; jump[8] = jump[9] = jump[10] = 72;
+  assert.equal(H.assessIndicator(ind, jump, 10, H.SENSITIVITY.standard).status, 2);
+});
+
+test('detector v2: a one-day spike does not linger in the smoothed trend', () => {
+  const ind = H.INDICATORS.find((i) => i.id === 'dose');
+  const arr = new Array(41).fill(1.1); arr[0] = null; arr[20] = 25;   // solar storm on day 20
+  assert.equal(H.assessIndicator(ind, arr, 21, {}).status >= 2, true, 'flagged during the event');
+  assert.equal(H.assessIndicator(ind, arr, 40, {}).status, 0, 'cleared three weeks later');
 });
 
 // ---------- personal baselines ----------

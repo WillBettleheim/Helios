@@ -2,3 +2,5 @@
 .claude/
 data/sync-store.json
 node_modules/
+data/mmash/
+data/mmash-results.json

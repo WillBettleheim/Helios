@@ -131,7 +131,7 @@
       const p = store.profile, cd = H.buildPersonal(p, store);
       ds.crew.me = cd;
       const sens = H.SENSITIVITY[p.sensitivity] || H.SENSITIVITY.standard;
-      A.me = H.assessCrew(c, ds, todayCheckin('me'), { day: cd.day, bases: H.personalBaselines(p, cd), zMon: sens.zMon, zAct: sens.zAct, plannedDays: p.plannedDays });
+      A.me = H.assessCrew(c, ds, todayCheckin('me'), { day: cd.day, bases: H.personalBaselines(p, cd), zMon: sens.zMon, zAct: sens.zAct, ewmaL: sens.ewmaL, plannedDays: p.plannedDays });
     });
     if (!A[ui.crewId]) ui.crewId = crewList()[0].id;
   }
@@ -1170,7 +1170,7 @@
       <h2 class="ct">${ICON.profile} Tuned to you</h2>
       <div class="adapt-meter"><i style="width:${(mine / total) * 100}%"></i><b style="width:${(st.calibrating / total) * 100}%"></b></div>
       <p class="small"><b class="mono">${mine}/${total}</b> baselines are personal${st.calibrating ? ` · <b class="mono">${st.calibrating}</b> learning` : ''}.</p>
-      <p class="muted small">Alerts: <b>${sens.label}</b> (${sens.zMon}/${sens.zAct} SD).</p>
+      <p class="muted small">Alerts: <b>${sens.label}</b> (alert level ${sens.ewmaL}).</p>
       <button class="link" data-action="nav" data-view="profile">Manage baselines & data ${ICON.arrow}</button>
     </div>`;
   }
@@ -1207,7 +1207,7 @@
         <div class="card">
           <h2 class="ct">Alert sensitivity</h2>
           <p class="muted small">How far from <em>your</em> normal a reading must be before HELIOS raises Monitor and Action.</p>
-          <div class="sens">${Object.entries(H.SENSITIVITY).map(([k, v]) => `<button class="${(p.sensitivity || 'standard') === k ? 'active' : ''}" data-action="sensitivity" data-k="${k}"><b>${v.label}</b><span class="mono">${v.zMon} / ${v.zAct} SD</span><small>${v.note}</small></button>`).join('')}</div>
+          <div class="sens">${Object.entries(H.SENSITIVITY).map(([k, v]) => `<button class="${(p.sensitivity || 'standard') === k ? 'active' : ''}" data-action="sensitivity" data-k="${k}"><b>${v.label}</b><span class="mono">alert level ${v.ewmaL}</span><small>${v.note}</small></button>`).join('')}</div>
         </div>
         <div class="card">
           <h2 class="ct">${ICON.upload} Your data</h2>

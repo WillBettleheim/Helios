@@ -110,3 +110,40 @@ test('headache days count check-ins in a 7-day window', () => {
   assert.equal(cd.series.headache[10], 3);
   assert.equal(cd.series.headache[1], null);
 });
+
+test('pattern finding: several small changes that line up are reported when none alarms alone', () => {
+  const day = 60, mk = (v) => { const a = new Array(day + 1).fill(null); for (let d = 1; d <= day; d++) a[d] = v(d); return a; };
+  const ramp = (d) => Math.max(0, Math.min(1, (d - 30) / 20));
+  const series = {};
+  H.INDICATORS.forEach((i) => { series[i.id] = new Array(day + 1).fill(null); });
+  // Infection pattern: temperature, resting HR up and HRV down, each only ~1.6 SD by day 50+.
+  series.temp = mk((d) => 36.7 + 0.32 * ramp(d));
+  series.rhr = mk((d) => 58 + 4.8 * ramp(d));
+  series.hrv = mk((d) => 52 - 9.6 * ramp(d));
+  const bases = { temp: { mean: 36.7, sd: 0.2, source: 'preflight' }, rhr: { mean: 58, sd: 3, source: 'preflight' }, hrv: { mean: 52, sd: 6, source: 'preflight' } };
+  const cd = { series, offsets: {}, doseRate: 0 };
+  const a = H.assessCrew({ id: 'x', name: 'X', personal: true }, { crew: { x: cd }, env: H.buildDataset({ checkins: {}, pvt: {} }).env }, null, { day, bases, ...H.SENSITIVITY.conservative });
+  const each = ['temp', 'rhr', 'hrv'].map((id) => a.inds[id].status);
+  assert.deepEqual(each, [0, 0, 0], `members alarmed alone: ${each}`);
+  assert.ok(a.insights.some((i) => i.id === 'pattern-infection'), a.insights.map((i) => i.id).join());
+});
+
+test('Conservative setting uses the confirm-twice rule for sparse lab values', () => {
+  const ind = H.INDICATORS.find((i) => i.id === 'lymph');      // bad direction: down; base 2.0 ± 0.25
+  const arr = new Array(43).fill(null);
+  [7, 14, 21, 28, 35].forEach((d) => { arr[d] = 2.0; });
+  arr[42] = 1.45;                                               // a single −2.2 SD result
+  assert.equal(H.assessIndicator(ind, arr, 42, H.SENSITIVITY.standard).status >= 1, true, 'standard flags one result ≥ 2 SD');
+  assert.equal(H.assessIndicator(ind, arr, 42, H.SENSITIVITY.conservative).status, 0, 'conservative waits for confirmation');
+  arr[35] = 1.6;                                                // previous result also −1.6 SD → confirmed
+  assert.equal(H.assessIndicator(ind, arr, 42, H.SENSITIVITY.conservative).status, 1);
+});
+
+test('exercise prescription is a target: only enforced for people whose normal meets it', () => {
+  const ind = H.INDICATORS.find((i) => i.id === 'exer');
+  const flat = (v) => { const a = new Array(31).fill(null); for (let d = 1; d <= 30; d++) a[d] = v; return a; };
+  // A person who normally does 30 min/day is judged against that, not the 60-min prescription.
+  assert.equal(H.assessIndicator(ind, flat(30), 30, { bases: { exer: { mean: 30, sd: 8, source: 'preflight' } } }).status, 0);
+  // An astronaut whose normal is 120 min/day who drops to 50 still triggers the prescription limit.
+  assert.equal(H.assessIndicator(ind, flat(50), 30, { bases: { exer: { mean: 120, sd: 12, source: 'preflight' } } }).status >= 2, true);
+});

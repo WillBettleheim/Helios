@@ -26,11 +26,18 @@ test('Mann–Kendall and Sen match textbook values', () => {
   assert.ok(Math.abs(W.phi(1.96) - 0.975) < 1e-4 && Math.abs(W.phi(-1.645) - 0.05) < 1e-4);
 });
 
-test('a persistent step change is detected and dated', () => {
-  const s = series(140, (d) => (d > 98 ? 63 : 58));          // +5 bpm from week 15
-  const r = W.analyze(rhr, s, base, 140);
-  assert.equal(r.status, 'shift');
-  assert.ok(r.shift.since >= 14 && r.shift.since <= 16, `onset W${r.shift.since}`);
+test("a step change is the daily detector's job; a ramp is the weekly test's job", () => {
+  const step = series(140, (d) => (d > 98 ? 65.5 : 58));      // +7.5 bpm (2.5 SD) from week 15, then flat
+  assert.notEqual(W.analyze(rhr, step, base, 140).status, 'drift', 'a step is not a trend');
+  // The daily EWMA chart flags the step within days of it happening.
+  let flagged = null;
+  for (let d = 99; d <= 140 && flagged == null; d++) if (H.assessIndicator(rhr, step, d, { bases: { rhr: base } }).status >= 1) flagged = d;
+  // Measured: 1.7 SD → 17 days, 2 SD → 9, 2.5 SD → 4, 3 SD → 3 (larger changes are caught faster).
+  assert.ok(flagged != null && flagged - 99 <= 7, `daily detector flagged on day ${flagged}`);
+  const ramp = series(140, (d) => 58 + Math.max(0, d - 84) * 0.1);   // slow ramp from week 13
+  const w = W.analyze(rhr, ramp, base, 140);
+  assert.equal(w.status, 'drift');
+  assert.ok(w.onset >= 11 && w.onset <= 15, `onset W${w.onset}`);
 });
 
 test('a slow drift is detected with its rate', () => {
@@ -56,15 +63,14 @@ test('too few weeks gives no verdict', () => {
   assert.equal(r.status, 'insufficient');
 });
 
-test('demo crew: healthy member clean, scenario problems found, no false shifts in radiation', () => {
+test('demo crew: healthy member clean, scenario problems found, no radiation drift from the solar storm', () => {
   const ds = H.buildDataset({ checkins: {}, pvt: {} });
   const run = (id) => { const c = H.CREW.find((x) => x.id === id); return W.analyzeCrew(H.assessCrew(c, ds, null), ds.crew[id], 147); };
-  const kai = run('lindqvist');
-  assert.equal(kai.shifts.length + kai.drifts.length, 0, kai.shifts.concat(kai.drifts).map((x) => x.ind.id).join());
-  const ren = run('nakamura').shifts.map((x) => x.ind.id);
+  assert.equal(run('lindqvist').drifts.length, 0, run('lindqvist').drifts.map((x) => x.ind.id).join());
+  const ren = run('nakamura').drifts.map((x) => x.ind.id);
   for (const id of ['sleep', 'pvt', 'exer', 'bmd']) assert.ok(ren.includes(id), `missing ${id}`);
-  for (const c of H.CREW) assert.ok(!run(c.id).shifts.some((x) => x.ind.id === 'dose'), `solar storm faked a dose shift for ${c.id}`);
-  const reyes = run('reyes').shifts.map((x) => x.ind.id);
+  for (const c of H.CREW) assert.ok(!run(c.id).drifts.some((x) => x.ind.id === 'dose'), `solar storm read as a dose drift for ${c.id}`);
+  const reyes = run('reyes').drifts.map((x) => x.ind.id);
   for (const id of ['rhr', 'hrv', 'sbp']) assert.ok(reyes.includes(id), `missing ${id}`);
 });
 

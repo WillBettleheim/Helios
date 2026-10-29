@@ -130,6 +130,24 @@ await import('/tools/a11y-audit.js').then((m) => m.audit())
 
 All screens pass in all three themes. This complements testing with VoiceOver or NVDA; it doesn't replace it.
 
+## Quality checks
+
+```bash
+npm test                      # asset-version check + 40 Node tests
+```
+
+- **Real-data tests:**
+  - All 924 Inspiration4 lab values embedded in the app match NASA OSDR's raw files.
+  - Unit mix-ups, such as glucose in mmol/L instead of mg/dL, are flagged before saving.
+  - Panels with under half the values get no verdict.
+- **Plausibility:** every indicator has a physiologically possible range. Impossible values (a heart rate of 0, 98.6 entered as °C) are rejected as data errors on every entry path, so they can't raise false alarms. Imports report how many values they skipped.
+- **Stress tests:** 400 random and extreme profiles run through the engine, FHIR export and EVA check with no exceptions and no non-finite numbers.
+- **Screen sweep:** `tools/smoke.js` visits every screen for every crew member, presses every safe button, and reports errors, failed renders or broken text. From the browser console:
+  ```js
+  const r = await (await import('/tools/smoke.js')).sweep(); console.table(r.issues)
+  ```
+- **No stale code after updates:** `npm run version` stamps a content hash on every script and stylesheet URL and names the offline cache after it. The tests fail if the hashes are out of date.
+
 ## Tests
 
 ```bash

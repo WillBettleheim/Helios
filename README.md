@@ -55,7 +55,8 @@ Open **http://localhost:8173/?judge**. It skips the intro and plays the mission 
 - **Architecture and diagrams:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 **Headline results:**
-- **Mission replay (simulated):** HELIOS flagged 21 developing problems across the crew. 15 never crossed a fixed medical limit, and where limits were crossed HELIOS was up to 29 days earlier.
+- **Mission replay (simulated):** HELIOS flagged 19 developing problems across the crew. 13 never crossed a fixed medical limit, and where limits were crossed HELIOS was never later and up to 25 days earlier.
+- **Detection benchmark (200 held-out simulated astronauts):** 98.8 % of problems caught, with 2.7 false alarms per person per month instead of 10 (−73 %).
 - **Real Inspiration4 blood data:** ensemble AUROC 0.85, nested estimate 0.68.
 
 ## Feature modules
@@ -131,6 +132,36 @@ await import('/tools/a11y-audit.js').then((m) => m.audit())
 
 All screens pass in all three themes. This complements testing with VoiceOver or NVDA; it doesn't replace it.
 
+## Detection benchmark: fewer false alarms
+
+`tools/benchmark.js` generates randomized simulated astronauts:
+- **Between-person spread:** taken from the real MMASH data (resting HR ±5.4 bpm, HRV ±14.5 ms).
+- **Realistic noise:** day-to-day noise is autocorrelated (AR(1), φ = 0.5), so today's value resembles yesterday's.
+- **Personal baselines:** 10 preflight readings each.
+- **Problems:** 40 % stay healthy. The rest develop 1–3 problems with random indicator, onset, speed and size (1.5–4 SD).
+
+Detectors run in real time, with no look-ahead. Variants were compared on 200 people (seeds 1–200), and the chosen one was confirmed on 200 different people (seeds 1001–1200):
+
+| Detector (held-out people) | Problems caught | Median delay | False alarms / person-month |
+|---|---|---|---|
+| v1: 3-day mean ≥ 2 SD + 14-day line projection + all limits | 99.2 % | 7 d | 9.96 |
+| Weekly trend system alone | 98.8 % | 16 d | 2.10 |
+| **v2 (shipped): robust EWMA + jump ≥ 4 SD + weekly tests + safety limits** | **98.8 %** | **10 d** | **2.65** |
+
+What v2 changes, and why:
+- **EWMA instead of the 2-SD rule.** The diagnostic runs showed the 2-SD rule on 3-day means caused about 4.8 false alarms a month. v2 uses a robust EWMA control chart (λ = 0.2, limit widened for autocorrelation, each day capped at ±4 SD so one spike can't linger).
+- **Weekly tests instead of the line projection.** The 14-day straight-line projection caused about 5.3 false alarms a month. v2 uses the statistical weekly trend tests instead.
+- **Population "monitoring" limits no longer alarm on their own once a personal baseline exists**, because they fired on healthy people whose normal sits near them. Action and urgent limits (fever, high blood pressure) always alarm.
+- **Sudden jumps of 4 SD or more** are flagged the same day.
+
+**The trade-off:** about 3 days later on average (small problems: 14 days instead of 8) for 73 % fewer false alarms. Large problems are still all caught, at a 9-day median.
+
+The alert sensitivity setting moves the EWMA alert level: Sensitive 2.75, Standard 3.25, Conservative 3.75. Sparse indicators (weekly labs, scans) keep the v1 rules because the benchmark didn't cover them. The benchmark is simulation: it shows the method's behaviour under realistic noise, not clinical performance.
+
+```bash
+node tools/benchmark.js 200 "daily (current)|HELIOS engine v2 (as shipped)"
+```
+
 ## Validation on real wearable data (PhysioNet MMASH)
 
 HELIOS's sensor and import code was run on **real 24-hour recordings from 19–22 healthy adults**: beat-to-beat intervals from a chest strap, per-second heart rate from an activity monitor, and sleep logs.
@@ -162,7 +193,7 @@ Each recording covers about one day, so this validates the sensor, HRV and impor
 ## Quality checks
 
 ```bash
-npm test                      # asset-version check + 53 Node tests (MMASH tests run when the data is fetched)
+npm test                      # asset-version check + 55 Node tests (MMASH tests run when the data is fetched)
 ```
 
 - **Real-data tests:**
@@ -202,7 +233,7 @@ available in the crew menu.
   so a handful of readings can't produce an unrealistically tight band.
 - **"This is normal for me."** Re-baselines one indicator on your last 14 days (logged, and
   reversible).
-- **Alert sensitivity.** Choose Sensitive (1.5 / 2.5 SD), Standard (2 / 3) or Conservative (2.5 / 3.5).
+- **Alert sensitivity.** Choose Sensitive, Standard or Conservative. This moves the daily detector's smoothed alert level (2.75 / 3.25 / 3.75); for weekly lab values it is 1.5/2.5, 2/3 or 2.5/3.5 SD.
 - **Private by design.** Everything stays in this browser. You can export a backup, restore it, or
   delete your profile and data.
 

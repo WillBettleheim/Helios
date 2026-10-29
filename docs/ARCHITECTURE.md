@@ -47,13 +47,14 @@ flowchart LR
 ```mermaid
 flowchart TD
   r[Reading] --> base{Personal baseline known?}
-  base -- preflight / learned / adaptive --> z[Deviation in SD from YOUR normal]
+  base -- preflight / learned / adaptive --> e[Robust EWMA of deviation from YOUR normal<br/>λ 0.2 · autocorrelation-aware limit]
   base -- still calibrating --> lim
-  z --> zmon{≥ 2 SD?} --> mon[Monitor]
-  z --> zact{≥ 3 SD?} --> act[Action]
-  r --> lim[Absolute medical limits] --> mon & act
-  r --> tr[21-day trend, projected 14 days] --> early[Monitor · trend]
-  mon & act & early --> rules[Rules combine indicators + symptoms<br/>→ finding, evidence, actions, protocol, route]
+  e --> mon[Monitor ≥ 3.25]
+  e --> act[Action ≥ 4.75]
+  r --> jump{Jump ≥ 4 SD?} --> act
+  r --> wk[Weekly tests: Mann–Kendall · CUSUM] --> mon
+  r --> lim[Safety limits: Action / Urgent<br/>Monitor limits only while calibrating] --> act
+  mon & act --> rules[Rules combine indicators + symptoms<br/>→ finding, evidence, actions, protocol, route]
 ```
 
 ### Weekly trend system (separate)
@@ -67,9 +68,9 @@ flowchart TD
    - a **one-sided CUSUM** against the baseline, with each week capped at 3 SE so a single storm or sick day can't fake a shift; the start week is estimated with Page's change-point method
 3. Expected in-flight trends (bone density) are removed first, and cumulative totals aren't trend-tested.
 
-On the simulated mission it independently caught 19 of the 21 problems. It's usually slower than the daily checks, because it judges whole weeks, but it caught the commander's slow resting-heart-rate rise 22 days earlier.
+Since detector v2, the daily detector also uses these weekly tests (see below), so any slow drift they confirm raises an alert. On their own they caught the commander's slow resting-heart-rate rise on day 112.
 
-Thresholds adjust with the alert sensitivity setting (Sensitive 1.5/2.5 SD, Standard 2/3, Conservative 2.5/3.5).
+Detector v2 was chosen on a randomized benchmark (`tools/benchmark.js`) and confirmed on held-out simulated people: 98.8 % detection with 2.7 false alarms per person-month, against 10 for v1. The alert sensitivity setting moves the EWMA alert level (2.75 / 3.25 / 3.75). Sparse indicators (weekly labs, scans) keep the v1 2/3-SD rules.
 
 ## Code map
 
@@ -85,7 +86,7 @@ Thresholds adjust with the alert sensitivity setting (Sensitive 1.5/2.5 SD, Stan
 | `tools/evaluate.js` | Leave-one-crew-out and nested evaluation on NASA OSDR data; exports `js/lab-model.js` |
 | `tools/sync-server.js` | Ciphertext-only sync relay with optional light-time delay |
 | `tools/a11y-audit.js` | In-page WCAG checks |
-| `test/*.test.js` | 53 Node tests (`npm test`) |
+| `test/*.test.js` | 55 Node tests (`npm test`) |
 
 ## Data and validation
 

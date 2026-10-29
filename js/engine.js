@@ -56,9 +56,34 @@ window.H = window.H || {};
     const useZ = hasMean && ind.useZ !== false;
     const raise = (lvl, msg) => { r.status = Math.max(r.status, lvl); r.reasons.push(msg); };
     const u = ind.unit;
+    /*
+     * Detector v2 (daily indicators). Chosen on a benchmark of randomized simulated crews with
+     * autocorrelated noise (tools/benchmark.js) and confirmed on held-out people: same detection
+     * rate as v1, ~73 % fewer false alarms. It replaces the 3-day-mean 2-SD rule and the 14-day
+     * straight-line projection — the two main sources of false alarms — with:
+     *   · an EWMA control chart (λ = 0.2) on the deviation from the personal baseline, its limit
+     *     widened for day-to-day autocorrelation; · an immediate flag for a sudden jump ≥ 4 SD;
+     *   · the weekly trend system (js/weekly.js) for slow drifts and persistent shifts;
+     *   · absolute Action/Urgent limits always; Monitor limits only while the baseline is unknown.
+     * Sparse indicators (weekly labs, scans) keep v1's rules. ctx.legacy forces v1 (benchmark).
+     */
+    const v2 = !ctx.legacy && ind.cadence <= 2 && !ind.window && !ind.cumulative;
+    const what = !hasMean ? '' : ind.expected ? 'expected in-flight trajectory' : B.source === 'preflight' ? 'preflight baseline' : 'personal baseline';
 
-    if (useZ) {
-      const what = ind.expected ? 'expected in-flight trajectory' : B.source === 'preflight' ? 'preflight baseline' : 'personal baseline';
+    if (useZ && !ctx.noZ && v2) {
+      const lam = 0.2, phi = 0.5;
+      const unit = Math.sqrt((lam / (2 - lam)) * (1 + phi * (1 - lam)) / (1 - phi * (1 - lam)));
+      let e = null;
+      // Robust EWMA: each day's input is capped at ±4 SD, so a one-day spike (a solar storm) is
+      // flagged by the sudden-change rule on the day, but cannot dominate the smoothed trend for weeks.
+      pts.forEach(([d, v]) => { const z = Math.max(-4, Math.min(4, (v - centerAt(d)) / B.sd)); e = e == null ? lam * z : lam * z + (1 - lam) * e; });
+      r.ewma = e / unit;                                   // in control-limit units
+      const eBad = r.ewma * sign, Lm = ctx.ewmaL || 3.25, La = Lm + 1.5;
+      const label = `Sustained ${r.ewma > 0 ? 'rise' : 'fall'} vs your ${what} (smoothed score ${Math.abs(r.ewma).toFixed(1)}; alert at ${Lm})`;
+      if (eBad >= La) raise(2, label);
+      else if (eBad >= Lm) raise(1, label);
+      if (r.zBad >= (ctx.jumpZ || 4)) raise(2, `Sudden change: ${Math.abs(r.z).toFixed(1)} SD ${r.z > 0 ? 'above' : 'below'} your ${what}`);
+    } else if (useZ && !ctx.noZ) {
       const label = `${Math.abs(r.z).toFixed(1)} SD ${r.z > 0 ? 'above' : 'below'} your ${what}`;
       if (r.zBad >= zAct) raise(2, label);
       else if (r.zBad >= zMon) raise(1, label);
@@ -66,7 +91,12 @@ window.H = window.H || {};
     const L = ind.limits || {};
     if (L.urgent != null && crossed(r.current, L.urgent, sign)) raise(3, `Beyond urgent limit (${L.urgent} ${u})`);
     else if (L.action != null && crossed(r.current, L.action, sign)) raise(2, `Beyond action limit (${L.action} ${u})`);
-    else if (L.monitor != null && crossed(r.current, L.monitor, sign)) raise(1, `Beyond monitoring limit (${L.monitor} ${u})`);
+    else if (L.monitor != null && crossed(r.current, L.monitor, sign)) {
+      // With a personal baseline, a population Monitor limit alone is informational: some people's
+      // normal sits near it (seen in real PhysioNet data). The personal detectors judge change.
+      if (v2 && useZ) r.reasons.push(`${sign > 0 ? 'Above' : 'Below'} the population monitoring limit (${L.monitor} ${u}) — judged against your own normal`);
+      else raise(1, `Beyond monitoring limit (${L.monitor} ${u})`);
+    }
 
     // Trend over the last 21 days, projected forward.
     if (ind.cumulative) {
@@ -78,13 +108,14 @@ window.H = window.H || {};
         r.reasons.push(`Projected ${fmt(r.projected, 0)} ${u} at mission end — ${Math.round(r.projected / H.MISSION.careerLimit * 100)}% of the career limit`);
       }
     } else {
-      const win = pts.filter((p) => p[0] > day - Math.max(21, ind.cadence * 4));
+      const win = ctx.noTrend ? [] : pts.filter((p) => p[0] > day - Math.max(21, ind.cadence * 4));
       if (win.length >= 4 && win[win.length - 1][0] - win[0][0] >= 6) {
         const s = regress(win);
         r.slopeWeek = s * 7;
         r.horizon = 14;
         r.projected = r.current + s * r.horizon;
-        if (r.status === 0) {
+        // v2: the straight-line projection is shown but no longer raises alerts (weekly tests do).
+        if (r.status === 0 && !v2) {
           const zP = useZ ? ((r.projected - centerAt(day + 14)) / r.sd) * sign : -Infinity;
           const limHit = L.monitor != null && crossed(r.projected, L.monitor, sign);
           if (zP >= zAct || limHit) {
@@ -92,6 +123,16 @@ window.H = window.H || {};
             r.reasons.push(`Trending toward threshold — projected ${fmt(r.projected, ind.dec)} ${u} in 14 days`);
           }
         }
+      }
+    }
+
+    // Slow drifts and persistent shifts: the weekly trend system, on the same baseline.
+    if (v2 && hasMean && !ctx.noTrend && H.weekly) {
+      const w = H.weekly.analyze(ind, arr, B, day);
+      r.weekly = w;
+      if (w.status === 'shift' || w.status === 'drift') {
+        if (r.status === 0) r.trending = true;
+        raise(Math.max(1, w.level), w.reasons[0]);
       }
     }
 
@@ -297,9 +338,9 @@ window.H = window.H || {};
   function median(a) { const s = a.slice().sort((x, y) => x - y); return s.length ? (s[(s.length - 1) >> 1] + s[s.length >> 1]) / 2 : null; }
 
   const SENSITIVITY = {
-    sensitive: { label: 'Sensitive', zMon: 1.5, zAct: 2.5, note: 'Earlier warnings, more false alarms' },
-    standard: { label: 'Standard', zMon: 2, zAct: 3, note: 'Balanced (default)' },
-    conservative: { label: 'Conservative', zMon: 2.5, zAct: 3.5, note: 'Fewer alerts, only clear deviations' },
+    sensitive: { label: 'Sensitive', zMon: 1.5, zAct: 2.5, ewmaL: 2.75, note: 'Earlier warnings, more false alarms' },
+    standard: { label: 'Standard', zMon: 2, zAct: 3, ewmaL: 3.25, note: 'Balanced (default)' },
+    conservative: { label: 'Conservative', zMon: 2.5, zAct: 3.5, ewmaL: 3.75, note: 'Fewer alerts, only clear deviations' },
   };
 
   function assessEnv(ds, day) {

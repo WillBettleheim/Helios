@@ -2,7 +2,7 @@
  * HELIOS service worker — keeps the whole app available offline.
  * Network-first for the app files (so updates arrive when online), falling back to cache.
  */
-const CACHE = 'helios-d21c16c1';
+const CACHE = 'helios-1823df0f';
 const FILES = [
   './',
   'index.html',
@@ -15,7 +15,7 @@ const FILES = [
   'js/vault.js?v=e56757c0',
   'js/cosmos.js?v=99aa4d90',
   'js/data.js?v=456b42a5',
-  'js/engine.js?v=2fdd9977',
+  'js/engine.js?v=4b496805',
   'js/protocols.js?v=68ec6eeb',
   'js/weekly.js?v=ac075553',
   'js/sanitize.js?v=04db9c06',
@@ -41,7 +41,7 @@ const FILES = [
   'js/features/weekly.js?v=0b469a0c',
   'js/features/terms.js?v=8af9a6c1',
   'js/features/tour.js?v=31bc7dbb',
-  'js/app.js?v=36da5646',
+  'js/app.js?v=6b8496ab',
 ];
 
 self.addEventListener('install', (e) => {

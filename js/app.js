@@ -1275,6 +1275,8 @@
       uid: prev.uid, name: fd.get('name'), role: fd.get('role'), mission: fd.get('mission'), start: fd.get('start'), plannedDays: fd.get('plannedDays'),
       priorDose: fd.get('priorDose'), sensitivity: fd.get('sensitivity'), baseline, rebase: prev.rebase || {}, created: prev.created || Date.now(), updated: Date.now(),
     });
+    const dropped = Object.keys(baseline).filter((k) => !(k in store.profile.baseline));
+    if (dropped.length) toast(`Ignored impossible baseline value${dropped.length > 1 ? 's' : ''}: ${dropped.map((k) => H.INDICATORS.find((i) => i.id === k).short).join(', ')}. Check the units.`);
     store.personal = store.personal || { records: {} };
     ui.editProfile = false;
     ui.crewId = 'me';
@@ -1293,7 +1295,7 @@
     const cols = head.map((h, i) => (H.LOGGABLE.includes(h) ? [i, h] : null)).filter(Boolean);
     if (!cols.length) { toast(`No recognised columns. Use: ${H.LOGGABLE.join(', ')}.`); return; }
     const recs = (store.personal = store.personal || { records: {} }).records;
-    let n = 0, days = 0, pre = 0;
+    let n = 0, days = 0, pre = 0, bad = 0;
     lines.slice(1).forEach((l) => {
       const cells = l.split(',');
       const date = (cells[di] || '').trim();
@@ -1302,13 +1304,14 @@
       cols.forEach(([i, id]) => {
         const x = parseFloat(cells[i]);
         if (!Number.isFinite(x)) return;
+        if (!H.plausible(id, x)) { bad++; return; }
         (recs[date] = recs[date] || {})[id] = x; n++; any = true;
       });
       if (any) { days++; if (H.dayOf(date, store.profile.start) < 1) pre++; }
     });
     log(`Imported ${n} readings over ${days} days`, 'import');
     recompute(); render();
-    toast(`Imported ${n} readings over ${days} days${pre ? ` (${pre} days before mission start used as preflight baseline)` : ''}.`);
+    toast(`Imported ${n} readings over ${days} days${pre ? ` (${pre} days before mission start used as preflight baseline)` : ''}${bad ? `; ${bad} implausible value${bad === 1 ? '' : 's'} skipped — check units` : ''}.`);
   }
 
   function download(name, text, type) {

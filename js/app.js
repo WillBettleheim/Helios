@@ -1309,9 +1309,9 @@
       });
       if (any) { days++; if (H.dayOf(date, store.profile.start) < 1) pre++; }
     });
-    log(`Imported ${n} readings over ${days} days`, 'import');
+    log(`Imported ${n} reading${n === 1 ? '' : 's'} over ${days} day${days === 1 ? '' : 's'}`, 'import');
     recompute(); render();
-    toast(`Imported ${n} readings over ${days} days${pre ? ` (${pre} days before mission start used as preflight baseline)` : ''}${bad ? `; ${bad} implausible value${bad === 1 ? '' : 's'} skipped — check units` : ''}.`);
+    toast(`Imported ${n} reading${n === 1 ? '' : 's'} over ${days} day${days === 1 ? '' : 's'}${pre ? ` (${pre} days before mission start used as preflight baseline)` : ''}${bad ? `; ${bad} implausible value${bad === 1 ? '' : 's'} skipped — check units` : ''}.`);
   }
 
   function download(name, text, type) {

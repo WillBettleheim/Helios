@@ -85,7 +85,7 @@ Thresholds adjust with the alert sensitivity setting (Sensitive 1.5/2.5 SD, Stan
 | `tools/evaluate.js` | Leave-one-crew-out and nested evaluation on NASA OSDR data; exports `js/lab-model.js` |
 | `tools/sync-server.js` | Ciphertext-only sync relay with optional light-time delay |
 | `tools/a11y-audit.js` | In-page WCAG checks |
-| `test/*.test.js` | 48 Node tests (`npm test`) |
+| `test/*.test.js` | 53 Node tests (`npm test`) |
 
 ## Data and validation
 
@@ -95,7 +95,7 @@ Thresholds adjust with the alert sensitivity setting (Sensitive 1.5/2.5 SD, Stan
   - Nested-search estimate: 0.68.
   - Details are on the Model validation page.
 - **Simulated data:** the demo mission's daily physiology, because no open in-flight astronaut wearable data exists. The mission replay shows how early the engine flags problems on this scenario. It demonstrates the method, not clinical performance.
-- **Live data:** the Bluetooth sensor reads real heart rate and RR intervals through the standard Heart Rate profile and computes RMSSD on the device.
+- **Live data:** the Bluetooth sensor reads real heart rate and RR intervals through the standard Heart Rate profile and computes RMSSD on the device. It was validated on PhysioNet MMASH real recordings: r = 0.98 against a reference HRV computation, with noisy recordings flagged rather than reported.
 
 ## Privacy and safety by design
 

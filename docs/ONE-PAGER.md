@@ -22,13 +22,13 @@ On deep-space missions:
   - Ensemble AUROC: **0.85** (p = 0.012).
   - Nested estimate: **0.68**.
   - That's only four people, so the results are indicative.
-- **Live hardware:** a standard Bluetooth heart-rate strap streams heart rate and HRV into HELIOS in real time.
+- **Live hardware, tested on real recordings:** a standard Bluetooth heart-rate strap streams heart rate and HRV into HELIOS in real time. On 19 real nights from PhysioNet MMASH, HELIOS's HRV matched a reference computation with **r = 0.98**.
 
 ### Built for real use
 - **Privacy:** data stays on the device, with optional AES-256 encryption, and sync is end-to-end encrypted.
 - **Interoperability:** HL7 FHIR export for ground medical systems, plus Apple Health and CSV import.
 - **Accessibility and languages:** WCAG AA contrast in three themes, screen-reader support, glove mode, and 6 languages (ESA, JAXA, ISRO and Roscosmos crews).
-- **Quality:** 48 automated tests, input sanitizing, and Terms & Conditions with clear "not a medical device" wording.
+- **Quality:** 53 automated tests, input sanitizing, and Terms & Conditions with clear "not a medical device" wording.
 
 ### Try it
 ```bash

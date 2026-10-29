@@ -131,10 +131,38 @@ await import('/tools/a11y-audit.js').then((m) => m.audit())
 
 All screens pass in all three themes. This complements testing with VoiceOver or NVDA; it doesn't replace it.
 
+## Validation on real wearable data (PhysioNet MMASH)
+
+HELIOS's sensor and import code was run on **real 24-hour recordings from 19–22 healthy adults**: beat-to-beat intervals from a chest strap, per-second heart rate from an activity monitor, and sleep logs.
+
+```bash
+node tools/fetch-mmash.js     # downloads ~25 MB, verifies SHA-256, extracts (never committed)
+node tools/mmash-check.js     # runs HELIOS's own code on it
+```
+
+| Check | Result |
+|---|---|
+| Bluetooth heart-rate packets → HELIOS decoder | Round-trip error ≤ 0.48 ms, within the protocol's 1/1024 s resolution |
+| Live HRV (RMSSD) vs a reference computation | r = 0.98, mean absolute difference 1.6 ms, on 19 nights |
+| Noisy recording (31 % artefacts) | Flagged as too noisy (66 % clean beats) instead of reporting a wrong value |
+| Resting HR: chest strap vs activity monitor | Median difference 0.5 bpm |
+| Real sleep files through the CSV importer | 21 of 21 imported with correct hours; the one empty file was rejected cleanly |
+| Real people vs HELIOS's default ranges | 6 of 19 outside the default resting-HR band and 8 of 19 outside the HRV band. That's why HELIOS learns each person's own baseline. |
+
+This testing found and fixed four bugs:
+- HRV was inflated by artefacts (the old filter compared each beat only with the previous one and counted differences across removed beats).
+- HRV had no quality gate for noisy straps.
+- Day-numbered dates ("1", "2") were silently parsed as real dates in 2001.
+- Spreadsheet date serials became the year 45123.
+
+Each recording covers about one day, so this validates the sensor, HRV and import paths, not multi-week trend detection.
+
+*MMASH: Rossi A., Da Pozzo E., Menicagli D., et al. "Multilevel Monitoring of Activity and Sleep in Healthy People" (v1.0.0), PhysioNet (2020), https://doi.org/10.13026/cerq-fc86. The data is licensed under the Open Data Commons Open Database License v1.0, and these results are a Produced Work from it. The dataset itself is not redistributed in this repository.*
+
 ## Quality checks
 
 ```bash
-npm test                      # asset-version check + 48 Node tests
+npm test                      # asset-version check + 53 Node tests (MMASH tests run when the data is fetched)
 ```
 
 - **Real-data tests:**

@@ -131,7 +131,7 @@
       const p = store.profile, cd = H.buildPersonal(p, store);
       ds.crew.me = cd;
       const sens = H.SENSITIVITY[p.sensitivity] || H.SENSITIVITY.standard;
-      A.me = H.assessCrew(c, ds, todayCheckin('me'), { day: cd.day, bases: H.personalBaselines(p, cd), zMon: sens.zMon, zAct: sens.zAct, ewmaL: sens.ewmaL, plannedDays: p.plannedDays });
+      A.me = H.assessCrew(c, ds, todayCheckin('me'), { day: cd.day, bases: H.personalBaselines(p, cd), zMon: sens.zMon, zAct: sens.zAct, ewmaL: sens.ewmaL, sparseHybrid: !!sens.sparseHybrid, plannedDays: p.plannedDays });
     });
     if (!A[ui.crewId]) ui.crewId = crewList()[0].id;
   }

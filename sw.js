@@ -2,7 +2,7 @@
  * HELIOS service worker — keeps the whole app available offline.
  * Network-first for the app files (so updates arrive when online), falling back to cache.
  */
-const CACHE = 'helios-1823df0f';
+const CACHE = 'helios-5d70dc4d';
 const FILES = [
   './',
   'index.html',
@@ -14,10 +14,10 @@ const FILES = [
   'js/i18n.js?v=cedc8a7c',
   'js/vault.js?v=e56757c0',
   'js/cosmos.js?v=99aa4d90',
-  'js/data.js?v=456b42a5',
-  'js/engine.js?v=4b496805',
+  'js/data.js?v=1e5ae3f9',
+  'js/engine.js?v=e4087fcc',
   'js/protocols.js?v=68ec6eeb',
-  'js/weekly.js?v=ac075553',
+  'js/weekly.js?v=3ea3d4bf',
   'js/sanitize.js?v=04db9c06',
   'js/charts.js?v=acb07032',
   'js/validation-data.js?v=83e35b2b',
@@ -32,16 +32,16 @@ const FILES = [
   'js/features/nutrition.js?v=02d82789',
   'js/features/spaceweather.js?v=e12b8728',
   'js/features/settings.js?v=b0a0f5dc',
-  'js/features/replay.js?v=d42d753b',
+  'js/features/replay.js?v=c0c8cddf',
   'js/features/eva.js?v=586302e9',
   'js/features/live.js?v=15aba7b5',
   'js/features/blackout.js?v=456ce39d',
   'js/features/cohesion.js?v=65ea2325',
   'js/features/fhir.js?v=fa4fbd4d',
-  'js/features/weekly.js?v=0b469a0c',
+  'js/features/weekly.js?v=5a8e6453',
   'js/features/terms.js?v=8af9a6c1',
   'js/features/tour.js?v=31bc7dbb',
-  'js/app.js?v=6b8496ab',
+  'js/app.js?v=e72292ad',
 ];
 
 self.addEventListener('install', (e) => {

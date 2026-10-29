@@ -5,9 +5,10 @@
   "description": "On-board crew health monitoring prototype for long-duration spaceflight.",
   "scripts": {
     "start": "python3 -m http.server 8173",
-    "test": "node --test test/",
+    "test": "node tools/build-version.js --check && node --test test/",
     "evaluate": "node tools/evaluate.js",
     "sync-server": "node tools/sync-server.js",
-    "terms": "node tools/build-terms.js"
+    "terms": "node tools/build-terms.js",
+    "version": "node tools/build-version.js"
   }
 }

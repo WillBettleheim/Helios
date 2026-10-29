@@ -2,7 +2,7 @@
  * HELIOS service worker — keeps the whole app available offline.
  * Network-first for the app files (so updates arrive when online), falling back to cache.
  */
-const CACHE = 'helios-89c9bb04';
+const CACHE = 'helios-d21c16c1';
 const FILES = [
   './',
   'index.html',
@@ -23,7 +23,7 @@ const FILES = [
   'js/validation-data.js?v=83e35b2b',
   'js/lab-model.js?v=d2e147a4',
   'js/features/labs.js?v=5ffb5b7b',
-  'js/features/wearables.js?v=f4c05853',
+  'js/features/wearables.js?v=fee008fd',
   'js/features/outcomes.js?v=d48cef61',
   'js/features/triage.js?v=7ae6a7fe',
   'js/features/medkit.js?v=f627035f',
@@ -34,14 +34,14 @@ const FILES = [
   'js/features/settings.js?v=b0a0f5dc',
   'js/features/replay.js?v=d42d753b',
   'js/features/eva.js?v=586302e9',
-  'js/features/live.js?v=4beb0e5b',
+  'js/features/live.js?v=15aba7b5',
   'js/features/blackout.js?v=456ce39d',
   'js/features/cohesion.js?v=65ea2325',
   'js/features/fhir.js?v=fa4fbd4d',
   'js/features/weekly.js?v=0b469a0c',
   'js/features/terms.js?v=8af9a6c1',
   'js/features/tour.js?v=31bc7dbb',
-  'js/app.js?v=8424eccb',
+  'js/app.js?v=36da5646',
 ];
 
 self.addEventListener('install', (e) => {

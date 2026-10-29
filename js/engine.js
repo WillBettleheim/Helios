@@ -57,15 +57,17 @@ window.H = window.H || {};
     const raise = (lvl, msg) => { r.status = Math.max(r.status, lvl); r.reasons.push(msg); };
     const u = ind.unit;
     /*
-     * Detector v2 (daily indicators). Chosen on a benchmark of randomized simulated crews with
-     * autocorrelated noise (tools/benchmark.js) and confirmed on held-out people: same detection
-     * rate as v1, ~73 % fewer false alarms. It replaces the 3-day-mean 2-SD rule and the 14-day
-     * straight-line projection — the two main sources of false alarms — with:
-     *   · an EWMA control chart (λ = 0.2) on the deviation from the personal baseline, its limit
-     *     widened for day-to-day autocorrelation; · an immediate flag for a sudden jump ≥ 4 SD;
-     *   · the weekly trend system (js/weekly.js) for slow drifts and persistent shifts;
+     * Detector v3 (daily indicators). Chosen on a benchmark of randomized simulated crews with
+     * autocorrelated noise (tools/benchmark.js), confirmed on held-out people. Versus v1 (3-day
+     * mean ≥ 2 SD + 14-day line projection + all limits) it catches slightly more problems with
+     * ~3× fewer false alarms and ~3× less time in false alarm, at ~5 days' extra delay:
+     *   · robust EWMA control chart (λ = 0.2) on the deviation from the personal baseline, its
+     *     limit widened for day-to-day autocorrelation, inputs capped at ±4 SD;
+     *   · an immediate flag for a sudden jump ≥ 4 SD;
+     *   · the weekly Mann–Kendall trend test (js/weekly.js) for slow drifts;
      *   · absolute Action/Urgent limits always; Monitor limits only while the baseline is unknown.
-     * Sparse indicators (weekly labs, scans) keep v1's rules. ctx.legacy forces v1 (benchmark).
+     * Sparse indicators (weekly labs, scans) keep v1's rules (benchmarked: no variant dominated);
+     * the Conservative setting uses a stricter confirm-twice rule for them. ctx.legacy forces v1.
      */
     const v2 = !ctx.legacy && ind.cadence <= 2 && !ind.window && !ind.cumulative;
     const what = !hasMean ? '' : ind.expected ? 'expected in-flight trajectory' : B.source === 'preflight' ? 'preflight baseline' : 'personal baseline';
@@ -83,12 +85,31 @@ window.H = window.H || {};
       if (eBad >= La) raise(2, label);
       else if (eBad >= Lm) raise(1, label);
       if (r.zBad >= (ctx.jumpZ || 4)) raise(2, `Sudden change: ${Math.abs(r.z).toFixed(1)} SD ${r.z > 0 ? 'above' : 'below'} your ${what}`);
+    } else if (useZ && !ctx.noZ && ctx.sparseHybrid && ind.cadence > 2) {
+      // Conservative setting, sparse measurements: one result ≥ 2.5 SD, or two in a row ≥ 1.5 SD.
+      // Benchmarked on held-out people: ~52 % fewer false alarms, ~4 points less detection.
+      const zs = pts.slice(-2).map(([d, v]) => ((v - centerAt(d)) / B.sd) * sign);
+      const last = zs[zs.length - 1];
+      if (last >= 3) raise(2, `${Math.abs(r.z).toFixed(1)} SD ${r.z > 0 ? 'above' : 'below'} your ${what}`);
+      else if (last >= 2.5) raise(1, `${Math.abs(r.z).toFixed(1)} SD ${r.z > 0 ? 'above' : 'below'} your ${what}`);
+      else if (zs.length === 2 && zs.every((z) => z >= 1.5)) raise(1, `Two results in a row ≥ 1.5 SD from your ${what}`);
     } else if (useZ && !ctx.noZ) {
       const label = `${Math.abs(r.z).toFixed(1)} SD ${r.z > 0 ? 'above' : 'below'} your ${what}`;
       if (r.zBad >= zAct) raise(2, label);
       else if (r.zBad >= zMon) raise(1, label);
     }
-    const L = ind.limits || {};
+    let L = ind.limits || {};
+    // Targets (the exercise prescription) are not physiological safety limits. With a personal
+    // baseline they apply only to someone whose normal already meets them; otherwise the person is
+    // judged against their own normal. (Found on real PMData: treating them as safety limits kept
+    // ordinary people's exercise in alert ~74 % of the time.)
+    if (ind.target && v2 && useZ) {
+      const meets = L.monitor == null || !crossed(B.mean, L.monitor, sign);
+      if (!meets) {
+        if (crossed(r.current, L.monitor, sign)) r.reasons.push(`${sign > 0 ? 'Above' : 'Below'} the prescription target (${L.monitor} ${u}) — your usual level is ${fmt(B.mean, ind.dec)} ${u}`);
+        L = {};
+      }
+    }
     if (L.urgent != null && crossed(r.current, L.urgent, sign)) raise(3, `Beyond urgent limit (${L.urgent} ${u})`);
     else if (L.action != null && crossed(r.current, L.action, sign)) raise(2, `Beyond action limit (${L.action} ${u})`);
     else if (L.monitor != null && crossed(r.current, L.monitor, sign)) {
@@ -115,7 +136,7 @@ window.H = window.H || {};
         r.horizon = 14;
         r.projected = r.current + s * r.horizon;
         // v2: the straight-line projection is shown but no longer raises alerts (weekly tests do).
-        if (r.status === 0 && !v2) {
+        if (r.status === 0 && !v2 && !(ctx.sparseHybrid && ind.cadence > 2)) {
           const zP = useZ ? ((r.projected - centerAt(day + 14)) / r.sd) * sign : -Infinity;
           const limHit = L.monitor != null && crossed(r.projected, L.monitor, sign);
           if (zP >= zAct || limHit) {
@@ -126,11 +147,11 @@ window.H = window.H || {};
       }
     }
 
-    // Slow drifts and persistent shifts: the weekly trend system, on the same baseline.
+    // Slow drifts: the weekly Mann–Kendall trend test, on the same baseline.
     if (v2 && hasMean && !ctx.noTrend && H.weekly) {
       const w = H.weekly.analyze(ind, arr, B, day);
       r.weekly = w;
-      if (w.status === 'shift' || w.status === 'drift') {
+      if (w.status === 'drift') {
         if (r.status === 0) r.trending = true;
         raise(Math.max(1, w.level), w.reasons[0]);
       }
@@ -340,8 +361,42 @@ window.H = window.H || {};
   const SENSITIVITY = {
     sensitive: { label: 'Sensitive', zMon: 1.5, zAct: 2.5, ewmaL: 2.75, note: 'Earlier warnings, more false alarms' },
     standard: { label: 'Standard', zMon: 2, zAct: 3, ewmaL: 3.25, note: 'Balanced (default)' },
-    conservative: { label: 'Conservative', zMon: 2.5, zAct: 3.5, ewmaL: 3.75, note: 'Fewer alerts, only clear deviations' },
+    conservative: { label: 'Conservative', zMon: 2.5, zAct: 3.5, ewmaL: 3.75, sparseHybrid: true, note: 'Fewer alerts, only clear deviations' },
   };
+
+  /*
+   * Patterns across related measurements. Each member's smoothed (EWMA) deviation in the unhealthy
+   * direction is summed and divided by √k (≈ standard normal when healthy); ≥ 4 raises a finding.
+   * Benchmarked on held-out simulated people with multi-indicator problems: +1.2 points detection for
+   * ~11 % more false alarms. Only reported when no member has alarmed on its own, so it never
+   * duplicates a finding — it covers the case where several small changes add up.
+   */
+  const PATTERNS = [
+    { id: 'sleepLoss', members: ['sleep', 'sleff', 'pvt', 'mood'], domain: 'behav', protocol: 'P-SLP-01', title: 'Sleep, alertness and mood are slipping together' },
+    { id: 'infection', members: ['temp', 'rhr', 'hrv'], domain: 'immune', protocol: 'P-IMM-01', title: 'Early signs that could fit an infection' },
+    { id: 'cardioStrain', members: ['rhr', 'hrv', 'sbp'], domain: 'cardio', protocol: 'P-CV-01', title: 'Heart rate, HRV and blood pressure drifting together' },
+    { id: 'stress', members: ['stress', 'mood', 'sleep'], domain: 'behav', protocol: 'P-BHP-01', title: 'Stress, mood and sleep moving the wrong way together' },
+    { id: 'underEating', members: ['mass', 'kcal', 'fluid'], domain: 'nutrition', protocol: 'P-NUT-01', title: 'Weight, food and fluid all drifting down' },
+  ];
+  const PATTERN_L = 4;
+  function patternInsights(inds) {
+    const out = [];
+    PATTERNS.forEach((p) => {
+      const rs = p.members.map((id) => inds[id]).filter(Boolean);
+      if (rs.length < p.members.length || rs.some((r) => r.ewma == null)) return;
+      if (rs.some((r) => r.status > 0)) return;                 // a member already alarmed → its own finding covers it
+      const score = rs.reduce((s, r) => s + Math.max(0, r.ewma * (r.ind.bad === 'up' ? 1 : -1)), 0) / Math.sqrt(rs.length);
+      if (score < PATTERN_L) return;
+      out.push({
+        id: 'pattern-' + p.id, domain: p.domain, level: 1, title: p.title, protocol: p.protocol, escalate: 0, evidence: rs.map((r) => ({
+          id: r.ind.id, label: r.ind.short, value: `${fmt(r.current, r.ind.dec)} ${r.ind.unit}`,
+          note: `smoothed ${r.ewma * (r.ind.bad === 'up' ? 1 : -1) > 0 ? 'worse' : 'better'} than your normal (${Math.abs(r.ewma).toFixed(1)})`, status: 0 })),
+        summary: `None of these is unusual on its own, but together they are moving in the unhealthy direction (combined score ${score.toFixed(1)}; alert at ${PATTERN_L}). Small changes that line up like this often come before a clearer problem.`,
+        actions: ['Look at these together in Trends', `Start ${p.protocol} early`, 'Re-check in 2–3 days'],
+      });
+    });
+    return out;
+  }
 
   function assessEnv(ds, day) {
     const env = {};
@@ -367,7 +422,7 @@ window.H = window.H || {};
       });
     });
 
-    const insights = buildInsights(inds, env, checkin);
+    const insights = buildInsights(inds, env, checkin).concat(patternInsights(inds));
     // Symptom-driven findings can raise a domain above what the sensors alone show.
     insights.forEach((ins) => {
       const d = domains.find((x) => x.id === ins.domain);
@@ -378,5 +433,5 @@ window.H = window.H || {};
     return { crew: c, inds, env, domains, insights, readiness, overall: Math.max(...domains.map((d) => d.status)) };
   }
 
-  Object.assign(H, { LEVELS, LEVEL_LABEL, ESCALATION, SENSITIVITY, fmt, assessIndicator, assessCrew, assessEnv, personalBaselines });
+  Object.assign(H, { PATTERNS, LEVELS, LEVEL_LABEL, ESCALATION, SENSITIVITY, fmt, assessIndicator, assessCrew, assessEnv, personalBaselines });
 })(window.H);

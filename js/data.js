@@ -60,7 +60,7 @@ window.H = window.H || {};
     { id: 'uca', domain: 'msk', name: 'Urinary calcium', short: 'Urine Ca', unit: 'mg/day', dec: 0, bad: 'up',
       base: [190, 25], cadence: 3, src: 'Urine analyzer', limits: { monitor: 300, action: 350 } },
     { id: 'exer', domain: 'msk', name: 'Countermeasure exercise', short: 'Exercise', unit: 'min/day', dec: 0, bad: 'down',
-      base: [120, 12], cadence: 1, clamp: [0, 240], step: 5, src: 'ARED / treadmill / cycle logs', limits: { monitor: 90, action: 60 } },
+      base: [120, 12], cadence: 1, clamp: [0, 240], step: 5, src: 'ARED / treadmill / cycle logs', limits: { monitor: 90, action: 60 }, target: true },
     { id: 'grip', domain: 'msk', name: 'Grip strength', short: 'Grip', unit: 'kg', dec: 1, bad: 'down',
       base: [44, 1.5], cadence: 7, src: 'Hand dynamometer' },
 

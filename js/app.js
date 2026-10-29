@@ -77,7 +77,7 @@
   const slot = (name, ...args) => H.bus.emit('slot:' + name, ...args).filter(Boolean).join('');
 
   // Per-person collections keyed by crew id; "me" is the profile owner.
-  const PERSONAL_KEYS = ['checkins', 'pvt', 'steps', 'acks', 'labs', 'cog', 'outcomes', 'medlog', 'planner'];
+  const PERSONAL_KEYS = ['checkins', 'pvt', 'steps', 'acks', 'labs', 'cog', 'outcomes', 'medlog', 'planner', 'journal'];
   const SYMPTOMS = [
     ['headache', 'Headache'], ['vision', 'Vision change / blur'], ['congestion', 'Congestion / sinus pressure'],
     ['back', 'Back pain'], ['nausea', 'Nausea'], ['rash', 'Skin rash or blisters'], ['fatigue', 'Unusual fatigue'],
@@ -154,16 +154,28 @@
   const loadedAt = Date.now();
   const pad2 = (n) => String(n).padStart(2, '0');
   function hms(sec) { sec = Math.max(0, Math.floor(sec)); return `${pad2(Math.floor(sec / 3600))}:${pad2(Math.floor(sec / 60) % 60)}:${pad2(sec % 60)}`; }
-  function downlinkSec() { return M.downlinkInMin * 60 - (Date.now() - loadedAt) / 1000; }
+  // Communications blackout (e.g. solar conjunction): the next downlink is when the blackout ends.
+  const blackout = () => { const b = store.blackout; return b && b.until > Date.now() ? b : null; };
+  function downlinkSec() {
+    const b = blackout();
+    if (b) return (b.until - Date.now()) / 1000;
+    return M.downlinkInMin * 60 - (Date.now() - loadedAt) / 1000;
+  }
   function arrivalText() {
     const s = Math.max(0, downlinkSec()) + M.lightTimeSec;
-    return `${Math.floor(s / 3600)}h ${pad2(Math.floor(s / 60) % 60)}m`;
+    const d = Math.floor(s / 86400);
+    return d ? `${d}d ${Math.floor(s / 3600) % 24}h` : `${Math.floor(s / 3600)}h ${pad2(Math.floor(s / 60) % 60)}m`;
   }
   function tickClock() {
     const now = new Date();
     const sec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
     const met = $('#met'); if (met) met.textContent = `${M.day - 1}d ${hms(sec)}`;
-    const aos = $('#aos'); if (aos) aos.textContent = downlinkSec() > 0 ? hms(downlinkSec()) : 'IN WINDOW';
+    const aos = $('#aos');
+    if (aos) {
+      const sec = downlinkSec(), b = blackout();
+      aos.textContent = b ? `LOS ${Math.floor(sec / 86400)}d ${pad2(Math.floor(sec / 3600) % 24)}h` : sec > 0 ? hms(sec) : 'IN WINDOW';
+      aos.classList.toggle('t-urgent', !!b);
+    }
   }
 
   // ---------- shell ----------
@@ -514,7 +526,7 @@
         <ol>${i.actions.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>
       </div>
       <footer>
-        <span class="route">Recommended route: <b>${H.ESCALATION[i.escalate]}</b></span>
+        <span class="route">Recommended route: <b>${blackout() && i.escalate === 2 ? `${T('Crew Medical Officer')} — ${T('ground out of contact')}` : H.ESCALATION[i.escalate]}</b></span>
         <div class="btns">
           ${proto ? `<button class="btn sm primary" data-action="open-protocol" data-id="${proto.id}">Open ${proto.id}</button>` : ''}
           ${i.escalate >= 1 ? `<button class="btn sm" data-action="escalate" data-to="cmo" data-id="${i.id}">Notify CMO</button>` : ''}
@@ -952,6 +964,7 @@
         <div class="btns no-print">
           <button class="btn" data-action="print">Print</button>
           <button class="btn" data-action="export">Export JSON</button>
+          ${slot('report-actions')}
           <button class="btn primary" data-action="queue">Queue for downlink · ${size} KB</button>
         </div></div>
       <div class="card report">
@@ -1605,7 +1618,7 @@
   // ---------- feature API ----------
   H.app = {
     store, ui, ICON, M, $, esc, pill, lv, T, save, log, toast, go, slot, download,
-    render: () => render(), recompute: () => recompute(), normalize, armAutoLock, trapFocus, me: () => me(), crew: () => crewList(),
+    render: () => render(), recompute: () => recompute(), blackout, arrivalText, normalize, armAutoLock, trapFocus, me: () => me(), crew: () => crewList(),
     data: () => ds, assessments: () => A, dayFor, dayDate, todayCheckin,
     addView(v) { EXTRA_VIEWS[v.id] = v; if (!NAV.find((n) => n.id === v.id)) NAV.push(v); if (v.icon && v.iconSvg) ICON[v.icon] = v.iconSvg; },
     addIcon(name, svgInner) { ICON[name] = P(svgInner); },

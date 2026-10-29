@@ -1,7 +1,7 @@
 /*
  * HELIOS feature — Weekly trend review.
  * Screen and overview card for the multi-week detection system in js/weekly.js, which runs
- * separately from the daily engine and looks for slow drifts and persistent shifts.
+ * alongside the daily checks and looks for slow drifts that day-to-day noise hides.
  */
 window.H = window.H || {};
 (H.features = H.features || []).push(function (app) {
@@ -12,7 +12,7 @@ window.H = window.H || {};
 
   app.addIcon('weekly', '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/><path d="M7 17l3-3 3 2 4-5"/>');
   app.addView({ id: 'weekly', label: 'Weekly trends', short: 'Weekly', group: 'monitor', icon: 'weekly', render,
-    badge: () => { const r = run(); const n = r.shifts.length + r.drifts.length; return n ? `<span class="badge lvl-monitor">${n}</span>` : ''; } });
+    badge: () => { const n = run().drifts.length; return n ? `<span class="badge lvl-monitor">${n}</span>` : ''; } });
 
   function run() {
     const id = app.ui.crewId;
@@ -20,7 +20,7 @@ window.H = window.H || {};
   }
 
   const STATUS = {
-    shift: ['Sustained shift', 2], drift: ['Slow drift', 1], improving: ['Improving', 0], steady: ['Steady', 0], insufficient: ['Not enough weeks', 0], na: ['Not applicable', 0],
+    drift: ['Slow drift', 1], improving: ['Improving', 0], steady: ['Steady', 0], insufficient: ['Not enough weeks', 0], na: ['Not applicable', 0],
   };
   const fmtSlope = (r) => `${r.slope > 0 ? '+' : ''}${H.fmt(r.slope, r.ind.dec + 1)} ${r.ind.unit}/wk`;
 
@@ -52,9 +52,9 @@ window.H = window.H || {};
       const top = all.map((x) => `${X(x.w)},${Y(center(x.mid) + B.sd)}`), bot = all.map((x) => `${X(x.w)},${Y(center(x.mid) - B.sd)}`).reverse();
       s += `<polygon class="band" points="${top.concat(bot).join(' ')}"/><polyline class="center" points="${all.map((x) => `${X(x.w)},${Y(center(x.mid))}`).join(' ')}"/>`;
     }
-    if (r.shift) {
-      const ox = X(r.shift.since), right = ox > W * 0.7;
-      s += `<line class="wk-onset" x1="${ox}" x2="${ox}" y1="${m.t}" y2="${Hh - m.b}"/><text class="event-label" x="${right ? ox - 4 : ox + 4}" y="${m.t + 10}" text-anchor="${right ? 'end' : 'start'}">${T('shift began ~')}W${r.shift.since}</text>`;
+    if (r.onset) {
+      const ox = X(r.onset), right = ox > W * 0.7;
+      s += `<line class="wk-onset" x1="${ox}" x2="${ox}" y1="${m.t}" y2="${Hh - m.b}"/><text class="event-label" x="${right ? ox - 4 : ox + 4}" y="${m.t + 10}" text-anchor="${right ? 'end' : 'start'}">${T('began ~')}W${r.onset}</text>`;
     }
     if (r.slope != null && r.weeks.length >= H.weekly.MIN_WEEKS) {
       const a = r.weeks[0].w, b = r.weeks[r.weeks.length - 1].w, yAt = (w) => r.intercept + r.slope * w + (ind.expected ? ind.expected(7 * (w - 1) + 4) : 0);
@@ -71,7 +71,7 @@ window.H = window.H || {};
       <span class="wk-name"><b>${esc(r.ind.short)}</b><small>${esc(H.DOMAINS.find((d) => d.id === r.ind.domain).name)}</small></span>
       ${bars(r)}
       <span class="mono wk-slope">${r.status === 'insufficient' ? '—' : fmtSlope(r)}</span>
-      ${app.pill(r.status === 'improving' ? 0 : r.level, r.status === 'shift' ? `${T('Shift since')} ~W${r.shift.since}` : T(label))}
+      ${app.pill(r.status === 'improving' ? 0 : r.level, r.status === 'drift' && r.onset ? `${T('Drifting since')} ~W${r.onset}` : T(label))}
     </button>${ui.sel === r.ind.id ? detail(r) : ''}`;
   }
 
@@ -91,41 +91,41 @@ window.H = window.H || {};
 
   function render() {
     const res = run(), c = app.me().crew;
-    const attention = res.results.filter((r) => r.status === 'shift' || r.status === 'drift').sort((a, b) => b.level - a.level || (a.weeksToLimit ?? 99) - (b.weeksToLimit ?? 99));
+    const attention = res.results.filter((r) => r.status === 'drift').sort((a, b) => b.level - a.level || (a.weeksToLimit ?? 99) - (b.weeksToLimit ?? 99));
     const rest = res.results.filter((r) => !attention.includes(r)).sort((a, b) => ['improving', 'steady', 'insufficient'].indexOf(a.status) - ['improving', 'steady', 'insufficient'].indexOf(b.status));
     const count = (s) => res.results.filter((r) => r.status === s).length;
     if (ui.sel == null && attention[0]) ui.sel = attention[0].ind.id;
     return `<div class="page-head"><div><p class="eyebrow">${T('Weekly trends')} · ${esc(c.name)} · ${T('mission week')} ${res.week}</p><h1>${T('What is changing slowly?')}</h1>
-      <p class="lede">A separate detection system from the daily checks. It averages each indicator per mission week and tests the last ${H.weekly.MAX_WEEKS} complete weeks for slow drifts (Mann–Kendall + Sen's slope) and persistent shifts from your baseline (CUSUM) — the kind of change no single day reveals.</p></div>
+      <p class="lede">A separate detection system from the daily checks. It averages each indicator per mission week and tests the last ${H.weekly.MAX_WEEKS} complete weeks for slow drifts (Mann–Kendall + Sen's slope) — the kind of change no single day reveals. Confirmed drifts also raise an alert in the daily checks.</p></div>
       <button class="btn" data-action="wk-queue">${T('Send weekly review to flight surgeon')}</button></div>
       <section class="wk-sum">
-        ${[['shift', 'action'], ['drift', 'monitor'], ['improving', 'nominal'], ['steady', ''], ['insufficient', '']].map(([k, l]) => `<div class="stat ${l ? 't-' + l : ''}"><span class="k">${T(STATUS[k][0])}</span><span class="v mono">${count(k)}</span></div>`).join('')}
+        ${[['drift', 'monitor'], ['improving', 'nominal'], ['steady', ''], ['insufficient', '']].map(([k, l]) => `<div class="stat ${l ? 't-' + l : ''}"><span class="k">${T(STATUS[k][0])}</span><span class="v mono">${count(k)}</span></div>`).join('')}
       </section>
       <div class="card"><h2 class="ct">${T('Needs attention')}</h2>
-        ${attention.length ? `<div class="wk-list">${attention.map(row).join('')}</div>` : `<p class="muted">${T('No slow drifts or sustained shifts in the last weeks.')}</p>`}</div>
+        ${attention.length ? `<div class="wk-list">${attention.map(row).join('')}</div>` : `<p class="muted">${T('No slow drifts in the last weeks.')}</p>`}</div>
       <div class="card"><h2 class="ct">${T('Everything else')}</h2><div class="wk-list">${rest.map(row).join('')}</div></div>
       <details class="card how"><summary>${T('How the weekly system works')}</summary>
-        <p>Daily readings are averaged per mission week (a week needs at least 3 readings for daily indicators). Then three independent checks run on the last ${H.weekly.MAX_WEEKS} complete weeks:</p>
+        <p>Daily readings are averaged per mission week (a week needs at least 3 readings for daily indicators). Then, on the last ${H.weekly.MAX_WEEKS} complete weeks:</p>
         <ul><li><b>Mann–Kendall trend test</b>: is there a consistent rise or fall? Non-parametric, so one odd week cannot create a trend. Flagged at p &lt; 0.01, because about two dozen indicators are tested.</li>
         <li><b>Sen's slope</b>: the robust rate of change per week, used to estimate weeks until the monitoring limit.</li>
-        <li><b>CUSUM</b>: accumulates weekly deviations from your baseline in the unhealthy direction (k = 0.5, h = 5, each week capped at 3 SE so a single storm or sick day cannot fake a shift). The estimated start week is the classic change-point estimate and is approximate.</li></ul>
+        <li><b>When it began</b>: for a confirmed drift, a CUSUM change-point estimate gives the approximate start week. CUSUM does not raise alerts on its own — on our benchmark it latched onto the small error any estimated baseline has, keeping healthy indicators in false alarm about 28 % of the time.</li></ul>
         <p>Indicators with an expected in-flight trend (hip bone density) are detrended first. Trends must also be practically meaningful (at least half a standard deviation in total).</p></details>`;
   }
 
   H.bus.on('action:wk-sel', (el) => { ui.sel = ui.sel === el.dataset.ind ? '' : el.dataset.ind; app.render(); });
   H.bus.on('action:wk-queue', () => {
     const r = run();
-    const title = `Weekly trend review W${r.week} — ${app.me().crew.name}: ${r.shifts.length} shift${r.shifts.length === 1 ? '' : 's'}, ${r.drifts.length} drift${r.drifts.length === 1 ? '' : 's'}`;
+    const title = `Weekly trend review W${r.week} — ${app.me().crew.name}: ${r.drifts.length} slow drift${r.drifts.length === 1 ? '' : 's'}`;
     store.queue.push({ day: app.M.day, title, kb: 2, crewName: app.me().crew.name, t: Date.now() });
     app.log(title, 'weekly'); app.toast(`Queued for the flight surgeon — arrives in about ${app.arrivalText()}.`); app.render();
   });
 
   H.bus.on('slot:overview-side-top', () => {
     const r = run();
-    const items = r.shifts.concat(r.drifts);
+    const items = r.drifts;
     return `<div class="card"><h2 class="ct">📈 ${T('Weekly trends')}</h2>
-      ${items.length ? `<p class="small"><b>${r.shifts.length}</b> ${T('sustained shift')}${r.shifts.length === 1 ? '' : 's'} · <b>${r.drifts.length}</b> ${T('slow drift')}${r.drifts.length === 1 ? '' : 's'}</p>
-        <ul class="kv">${items.slice(0, 3).map((x) => `<li><span>${esc(x.ind.short)}</span><span class="mono small">${x.status === 'shift' ? `~W${x.shift.since}` : fmtSlope(x)}</span></li>`).join('')}</ul>`
+      ${items.length ? `<p class="small"><b>${r.drifts.length}</b> ${T('slow drift')}${r.drifts.length === 1 ? '' : 's'}</p>
+        <ul class="kv">${items.slice(0, 3).map((x) => `<li><span>${esc(x.ind.short)}</span><span class="mono small">${fmtSlope(x)}</span></li>`).join('')}</ul>`
         : `<p class="muted small">${r.results.every((x) => x.status === 'insufficient') ? T('Builds up after 4 weeks of readings.') : T('No slow drifts in the last weeks.')}</p>`}
       <button class="link" data-action="nav" data-view="weekly">${T('Weekly review')} ${app.ICON.arrow}</button></div>`;
   });

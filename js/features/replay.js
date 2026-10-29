@@ -47,7 +47,7 @@ window.H = window.H || {};
       if (H.weekly) {
         for (let d = 7 * Math.ceil(FROM / 7); d <= H.MISSION.day && weekly == null; d += 7) {
           const w = H.weekly.analyze(ind, ds.crew[id].series[ind.id], final.base, d);
-          if (w.status === 'shift' || w.status === 'drift') weekly = d;
+          if (w.status === 'drift') weekly = d;
         }
       }
       leads.push({ ind, helios: days[hi].d, weekly, limit: li >= 0 ? days[li].d : null, hasLimit: limit != null, lead: li >= 0 ? days[li].d - days[hi].d : null });

@@ -72,15 +72,16 @@ window.H = window.H || {};
   }
 
   function finish(agg, records) {
-    const out = {}; const counts = {};
+    const out = {}; const counts = {}; let rejected = 0;
     Object.entries(agg).forEach(([date, ids]) => {
       Object.entries(ids).forEach(([id, [sum, n]]) => {
         const v = SUM.has(id) ? sum : sum / n;
+        if (!H.plausible(id, v)) { rejected++; return; }       // wrong unit / glitch, not a finding
         (out[date] = out[date] || {})[id] = +v.toFixed(3);
         counts[id] = (counts[id] || 0) + 1;
       });
     });
-    return { byDate: out, counts, records, days: Object.keys(out).length };
+    return { byDate: out, counts, records, rejected, days: Object.keys(out).length };
   }
 
   // ---------- CSV with column mapping ----------
@@ -104,7 +105,7 @@ window.H = window.H || {};
     sleep: ['total sleep', 'sleep duration', 'minutes asleep', 'asleep', 'sleep time', 'total sleep duration', 'hours of sleep'],
     sleff: ['sleep efficiency', 'efficiency'],
     sbp: ['systolic'],
-    temp: ['body temperature', 'skin temperature', 'temperature'],
+    temp: ['body temperature', 'skin temperature', 'temperature', 'temp'],
     exer: ['exercise minutes', 'active minutes', 'very active minutes', 'activity minutes', 'exercise'],
     mass: ['body mass', 'weight'],
     fluid: ['water', 'fluid'],
@@ -191,7 +192,7 @@ window.H = window.H || {};
     Object.entries(result.byDate).forEach(([date, vals]) => { recs[date] = Object.assign(recs[date] || {}, vals); n += Object.keys(vals).length; });
     app.log(`Imported ${n} daily values over ${result.days} days from ${source}`, 'import');
     app.recompute();
-    app.toast(`Imported ${n} daily values over ${result.days} days from ${source}. HELIOS is updating your baselines.`);
+    app.toast(`Imported ${n} daily values over ${result.days} days from ${source}${result.rejected ? `; ${result.rejected} implausible value${result.rejected === 1 ? '' : 's'} skipped (check units)` : ''}. HELIOS is updating your baselines.`);
   }
 
   // ---------- view ----------
@@ -225,7 +226,7 @@ window.H = window.H || {};
 
   function summary(r, kind) {
     const notes = Object.keys(r.counts).map((id) => Object.values(APPLE).find((m) => m.id === id && m.note)).filter(Boolean);
-    return `<div class="imp-sum"><p><b class="mono">${r.records.toLocaleString()}</b> records → <b class="mono">${r.days}</b> days</p>
+    return `<div class="imp-sum"><p><b class="mono">${r.records.toLocaleString()}</b> records → <b class="mono">${r.days}</b> days${r.rejected ? ` · <span class="t-monitor">${r.rejected} implausible value${r.rejected === 1 ? '' : 's'} will be skipped</span>` : ''}</p>
       <ul class="kv">${Object.entries(r.counts).map(([id, n]) => `<li><span>${esc(label(id))}</span><span class="mono">${n} days</span></li>`).join('') || '<li><span>No supported records found.</span></li>'}</ul>
       ${notes.map((n) => `<p class="muted small">${esc(n.note)}</p>`).join('')}
       ${r.days ? `<div class="form-foot"><button class="btn" data-action="wear-discard" data-kind="${kind}">Discard</button><button class="btn primary" data-action="wear-commit" data-kind="${kind}">Import ${r.days} days</button></div>` : ''}</div>`;

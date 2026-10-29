@@ -42,6 +42,22 @@ Across the app:
 - **Command palette:** press ⌘K, Ctrl+K or `/` to jump to any view, indicator, protocol or crew member, or run an action.
 - **Sleep-period display** (moon icon): a red-shifted, low-blue-light theme.
 
+## For judges
+
+```bash
+npm start
+```
+
+Open **http://localhost:8173/?judge**. It skips the intro and plays the mission replay.
+
+- **Pitch script and video storyboard:** [docs/PITCH.md](docs/PITCH.md)
+- **One-page summary:** [docs/ONE-PAGER.md](docs/ONE-PAGER.md)
+- **Architecture and diagrams:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+
+**Headline results:**
+- **Mission replay (simulated):** HELIOS flagged 21 developing problems across the crew. 15 never crossed a fixed medical limit, and where limits were crossed HELIOS was up to 29 days earlier.
+- **Real Inspiration4 blood data:** ensemble AUROC 0.85, nested estimate 0.68.
+
 ## Feature modules
 
 New capabilities live in `js/features/` and plug into the app via a small API (`H.app`) and event bus (`H.bus`), so `app.js` stays the shell.
@@ -52,11 +68,17 @@ New capabilities live in `js/features/` and plug into the app via a small API (`
 | **Import wearables** (`wearables.js`) | Apple Health `export.xml` (streamed, works with large exports) and any CSV from Fitbit, Garmin, Oura, Whoop or a spreadsheet — columns and units are auto-matched, then confirmed. |
 | **What works for you** (`outcomes.js`) | Logging a protocol snapshots its target indicators; 2–7 days later HELIOS checks whether they improved and keeps a per-person track record. |
 | **Symptom triage** (`triage.js`) | Offline yes/no guides — chest pain, vision change, head injury, burns, allergic reaction — ending in steps and the kit items needed. |
-| **Medical kit** (`medkit.js`) | Shared inventory with expiry in mission days, radiation-sensitive and prescription flags, and a per-person medication log. |
+| **Medical kit** (`medkit.js`) | Shared inventory with expiry in mission days, radiation-sensitive and prescription flags, a stock forecast (planned or actual use, whichever is higher) and a per-person medication log. |
 | **Day planner** (`planner.js`) | 24-hour circadian plan (light, caffeine, peak work, nap, exercise, wind-down, sleep), adjusted to your sleep debt and alertness results. |
 | **Cognition tests** (`cognition.js`) | Digit span (working memory) and math processing (speed), compared with your own history, alongside the PVT. |
 | **Nutrition & hydration** (`nutrition.js` + engine) | New health domain: body mass, fluid and energy intake, with its own rule and protocol P-NUT-01. |
 | **Space weather** (`spaceweather.js`) | Solar-particle-event warning with countdown, storm-shelter timer and dose received / avoided. |
+| **Mission replay** (`replay.js`) | Replays days 90–147 through the engine and measures early-warning lead time against fixed medical limits; hosts judge mode (`?judge`). |
+| **EVA readiness** (`eva.js`) | GO / CAUTION / NO-GO before a spacewalk from alertness, sleep debt, symptoms, vitals, space weather, dose and airlock kit, with reasons and fixes. |
+| **Live sensor** (`live.js`) | Any Bluetooth LE heart-rate strap/watch (standard Heart Rate profile): live HR, RR intervals and RMSSD vs your baseline; saves a resting reading. Simulator for browsers without Web Bluetooth. |
+| **Blackout mode** (`blackout.js`) | Simulates loss of contact (e.g. 14-day solar conjunction): ground escalations reroute to the CMO, reports queue, countdown in the top bar. |
+| **Crew cohesion** (`cohesion.js`) | "Connection with crew" check-in measure (a new behavioural indicator) and a private on-device journal. |
+| **FHIR export** (`fhir.js`) | HL7 FHIR R4 Bundle — Patient, LOINC/UCUM-coded Observations and DetectedIssues — for ground medical systems. |
 | **Settings** (`settings.js`) | Language (English, Français, Deutsch, 日本語, Русский, हिन्दी — navigation, headings and common controls), glove mode, voice control, install, and encrypted sync. |
 
 **Offline install.** `manifest.webmanifest` + `sw.js` make HELIOS installable and usable with no connection (served over http/https).

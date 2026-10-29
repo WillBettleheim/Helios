@@ -30,13 +30,31 @@ window.H = window.H || {};
     return { hr, rr, contact: flags & 0x04 ? !!(flags & 0x02) : null };
   }
 
-  // RMSSD over clean beats in the window (drops ectopic/artefact intervals that jump > 20%).
+  // Beat quality: a beat is valid if it is physiological (300–2000 ms) and within 20 % of the median
+  // of its neighbours. Comparing with the neighbourhood (not just the previous beat) stops one
+  // artefact from also rejecting the good beat after it. Tested on real PhysioNet MMASH recordings.
+  const med = (a) => { const s = a.slice().sort((x, y) => x - y); return (s[(s.length - 1) >> 1] + s[s.length >> 1]) / 2; };
+  function validBeats(rr) {
+    return rr.map((x, i) => {
+      if (!(x >= 300 && x <= 2000)) return false;
+      const nb = rr.slice(Math.max(0, i - 2), i).concat(rr.slice(i + 1, i + 3)).filter((y) => y >= 300 && y <= 2000);
+      if (!nb.length) return true;
+      const m = med(nb);
+      return Math.abs(x - m) / m <= 0.2;
+    });
+  }
+  const MIN_QUALITY = 0.8;
+  function quality(rr) { if (!rr.length) return null; const ok = validBeats(rr); return ok.filter(Boolean).length / rr.length; }
+
+  // RMSSD from successive differences of *adjacent* valid beats only; null when fewer than 10 pairs
+  // or when over 20 % of beats are artefacts (the value would not be trustworthy).
   function rmssd(rr) {
-    const clean = rr.filter((x, i) => x > 300 && x < 2000 && (i === 0 || Math.abs(x - rr[i - 1]) / rr[i - 1] < 0.2));
-    if (clean.length < 10) return null;
-    let s = 0;
-    for (let i = 1; i < clean.length; i++) s += (clean[i] - clean[i - 1]) ** 2;
-    return Math.sqrt(s / (clean.length - 1));
+    if (rr.length < 11) return null;
+    const ok = validBeats(rr);
+    if (ok.filter(Boolean).length / rr.length < MIN_QUALITY) return null;
+    let s = 0, n = 0;
+    for (let i = 1; i < rr.length; i++) if (ok[i] && ok[i - 1]) { s += (rr[i] - rr[i - 1]) ** 2; n++; }
+    return n >= 10 ? Math.sqrt(s / n) : null;
   }
 
   function push(sample) {
@@ -95,7 +113,8 @@ window.H = window.H || {};
   function stats() {
     const hrs = st.hr.map((x) => x[1]);
     const sorted = hrs.slice().sort((a, b) => a - b);
-    return { now: hrs[hrs.length - 1], median: sorted.length ? sorted[sorted.length >> 1] : null, hrv: rmssd(st.rr.map((x) => x[1])), secs: st.started ? Math.round((Date.now() - st.started) / 1000) : 0 };
+    const rr = st.rr.map((x) => x[1]);
+    return { now: hrs[hrs.length - 1], median: sorted.length ? sorted[sorted.length >> 1] : null, hrv: rmssd(rr), quality: quality(rr), beats: rr.length, secs: st.started ? Math.round((Date.now() - st.started) / 1000) : 0 };
   }
 
   function compare(id, v) {
@@ -118,7 +137,7 @@ window.H = window.H || {};
     const s = stats(), hrC = compare('rhr', s.median), hvC = compare('hrv', s.hrv);
     return `<div class="live-grid">
       <div class="live-big lvl-${app.lv(hrC.lvl)}"><span class="eyebrow">${T('Heart rate')}</span><b class="mono">${s.now ?? '—'}<small> bpm</small></b><span class="small">${T('2-min median')} ${s.median ?? '—'} · ${esc(hrC.text)}</span></div>
-      <div class="live-big lvl-${app.lv(hvC.lvl)}"><span class="eyebrow">${T('HRV (RMSSD)')}</span><b class="mono">${s.hrv != null ? Math.round(s.hrv) : '—'}<small> ms</small></b><span class="small">${s.hrv != null ? esc(hvC.text) : st.source === 'ble' ? T('needs RR intervals — keep still, ~20 s') : ''}</span></div>
+      <div class="live-big lvl-${app.lv(hvC.lvl)}"><span class="eyebrow">${T('HRV (RMSSD)')}</span><b class="mono">${s.hrv != null ? Math.round(s.hrv) : '—'}<small> ms</small></b><span class="small">${s.hrv != null ? esc(hvC.text) : s.beats >= 30 && s.quality != null && s.quality < MIN_QUALITY ? `<span class="t-monitor">${T('Signal too noisy')} (${Math.round(s.quality * 100)}% ${T('clean beats')}) — ${T('moisten the strap electrodes and keep still')}</span>` : st.source === 'ble' ? T('needs RR intervals — keep still, ~20 s') : ''}</span></div>
       <div class="live-big"><span class="eyebrow">${T('Recording')}</span><b class="mono">${Math.floor(s.secs / 60)}:${String(s.secs % 60).padStart(2, '0')}</b><span class="small">${st.hr.length} ${T('samples')}</span></div>
     </div>${spark()}`;
   }
@@ -166,5 +185,5 @@ window.H = window.H || {};
   });
   H.bus.on('leave', (v) => { if (v === 'live' && st.source === 'sim') stop(); });
 
-  H.live = { parseHRM, rmssd };
+  H.live = { parseHRM, rmssd, quality, validBeats };
 });

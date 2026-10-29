@@ -10,12 +10,13 @@ window.H = window.H || {};
   const { esc, store } = app;
   const T = app.T;
   const FROM = 90;          // scenario problems begin after day ~95; earlier days are baseline
-  const st = { day: FROM, playing: false, speed: 1, timer: null, cache: {} };
+  const st = { day: FROM, playing: false, speed: 1, timer: null, cache: {}, crew: null };
 
   app.addIcon('replay', '<path d="M3 12a9 9 0 109-9 9 9 0 00-6.4 2.6L3 8"/><path d="M3 3v5h5"/><path d="M10 9l5 3-5 3z"/>');
   app.addView({ id: 'replay', label: 'Mission replay', short: 'Replay', group: 'monitor', icon: 'replay', render, mount });
 
-  const crewId = () => (H.CREW.find((c) => c.id === app.ui.crewId) ? app.ui.crewId : 'nakamura');
+  // The replay has its own crew picker so it never changes the person selected in the rest of the app.
+  const crewId = () => st.crew || (H.CREW.find((c) => c.id === app.ui.crewId) ? app.ui.crewId : 'nakamura');
 
   // Flag on day d counts only if it holds on at least 3 of the next 4 measured days (filters noise).
   function sustained(days, i) {
@@ -142,7 +143,7 @@ window.H = window.H || {};
 
   H.bus.on('action:rp-play', () => play(!st.playing));
   H.bus.on('action:rp-speed', (el) => { st.speed = +el.dataset.v; app.render(); });
-  H.bus.on('action:rp-crew', (el) => { st.day = FROM; app.ui.crewId = el.dataset.id; app.render(); });
+  H.bus.on('action:rp-crew', (el) => { st.day = FROM; st.crew = el.dataset.id; app.render(); });
   H.bus.on('change:rp-day', (el) => { st.playing = false; st.day = +el.value; app.render(); });
   document.addEventListener('input', (e) => { if (e.target && e.target.id === 'rp-range') { st.playing = false; st.day = +e.target.value; update(); } });
   H.bus.on('leave', (v) => { if (v === 'replay') { st.playing = false; clearTimeout(st.timer); } });
@@ -153,7 +154,7 @@ window.H = window.H || {};
     if (!judge) return;
     try { sessionStorage.setItem('helios.booted', '1'); } catch (e) { /* ignore */ }
     (store.prefs = store.prefs || {}).toured = true;
-    const go = () => { app.ui.crewId = 'nakamura'; st.day = FROM; st.playing = true; app.go('replay'); };
+    const go = () => { st.crew = 'nakamura'; st.day = FROM; st.playing = true; app.go('replay'); };
     if (H.termsAccepted && !H.termsAccepted()) H.bus.on('terms-accepted', go); else setTimeout(go, 0);
   });
 

@@ -14,7 +14,8 @@ window.H = window.H || {};
 
   const MAX_WEEKS = 8, MIN_WEEKS = 4, MIN_DAYS = 3;      // a week needs ≥3 readings (daily indicators)
   // α = 0.01: ~24 indicators are tested per person, so 0.05 would flag one by chance most weeks.
-  const ALPHA = 0.01, CUSUM_K = 0.5, CUSUM_H = 5, Z_CAP = 3;
+  const ALPHA = 0.01, Z_CAP = 3;
+  const CFG = { cusumK: 0.5, cusumH: 5 };
   const PRACTICAL = 0.5;                                  // a drift must total ≥ 0.5 SD to matter
 
   const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
@@ -99,17 +100,17 @@ window.H = window.H || {};
         const se = ind.window === 1 ? sd : sd / Math.sqrt(Math.min(x.n, 7));
         // Winsorised: one extreme week (a solar storm, a sick day) cannot fake a persistent shift.
         const z = Math.max(-Z_CAP, Math.min(Z_CAP, (sign * (x.mean - center(x.mid))) / se));
-        C = Math.max(0, C + z - CUSUM_K);
+        C = Math.max(0, C + z - CFG.cusumK);
         // Change point (Page): the shift began just after the unbounded cumulative sum was lowest.
-        R += z - CUSUM_K;
+        R += z - CFG.cusumK;
         if (alarm == null && R <= minR) { minR = R; minAt = x.w; }
-        if (alarm == null && C >= CUSUM_H) {
+        if (alarm == null && C >= CFG.cusumH) {
           const after = all.find((y) => y.w > (minAt == null ? 0 : minAt));
           alarm = { week: x.w, since: after ? after.w : x.w };
         }
         return { w: x.w, C };
       });
-      if (alarm && r.cusum[r.cusum.length - 1].C >= CUSUM_H) r.shift = alarm;
+      if (alarm && r.cusum[r.cusum.length - 1].C >= CFG.cusumH) r.shift = alarm;
     }
 
     // Weeks until the monitoring limit at the current rate (only when moving toward it).
@@ -120,12 +121,14 @@ window.H = window.H || {};
     }
 
     const practical = r.changeSD == null || Math.abs(r.changeSD) >= PRACTICAL;
-    if (r.shift) {
-      r.status = 'shift'; r.level = 2;
-      r.reasons.push(`Persistent shift from your baseline since week ${r.shift.since} (CUSUM).`);
-    } else if (pBad < ALPHA && practical) {
+    // Alerts come from the Mann–Kendall trend test only. On the randomized benchmark a CUSUM alarm
+    // on weekly means latched on (healthy indicators in false alarm ~28 % of the time), because a
+    // baseline estimated from a few noisy readings is always slightly off and CUSUM accumulates
+    // exactly that offset. CUSUM is kept to estimate *when* a confirmed drift began.
+    if (pBad < ALPHA && practical) {
       r.status = 'drift'; r.level = 1;
-      r.reasons.push(`Consistent ${sign > 0 ? 'rise' : 'fall'} over ${recent.length} weeks (Mann–Kendall p = ${pBad.toFixed(3)}).`);
+      r.reasons.push(`Consistent ${sign > 0 ? 'rise' : 'fall'} over ${recent.length} weeks (Mann–Kendall p = ${pBad.toFixed(3)})${r.shift ? `, beginning around week ${r.shift.since}` : ''}.`);
+      if (r.shift) r.onset = r.shift.since;
     } else if (pGood < ALPHA && practical) {
       r.status = 'improving'; r.level = 0;
       r.reasons.push(`Consistent improvement over ${recent.length} weeks (p = ${pGood.toFixed(3)}).`);
@@ -142,11 +145,12 @@ window.H = window.H || {};
   // Runs the weekly system for one person, using the daily engine's baselines.
   function analyzeCrew(a, cd, day) {
     const res = H.INDICATORS.filter((i) => !i.cumulative).map((ind) => analyze(ind, cd.series[ind.id], a.inds[ind.id] && a.inds[ind.id].base, day));
+    const drifts = res.filter((r) => r.status === 'drift');
     return {
       week: weekOf(day), lastFull: res[0] ? res[0].lastFull : 0, results: res,
-      shifts: res.filter((r) => r.status === 'shift'), drifts: res.filter((r) => r.status === 'drift'), improving: res.filter((r) => r.status === 'improving'),
+      drifts, urgent: drifts.filter((r) => r.level >= 2), improving: res.filter((r) => r.status === 'improving'),
     };
   }
 
-  H.weekly = { analyze, analyzeCrew, mannKendall, senSlope, weeklyMeans, weekOf, phi, MIN_WEEKS, MAX_WEEKS };
+  H.weekly = { analyze, analyzeCrew, mannKendall, senSlope, weeklyMeans, weekOf, phi, MIN_WEEKS, MAX_WEEKS, CFG };
 })(window.H);

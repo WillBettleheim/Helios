@@ -56,7 +56,8 @@ Open **http://localhost:8173/?judge**. It skips the intro and plays the mission 
 
 **Headline results:**
 - **Mission replay (simulated):** HELIOS flagged 19 developing problems across the crew. 13 never crossed a fixed medical limit, and where limits were crossed HELIOS was never later and up to 25 days earlier.
-- **Detection benchmark (200 held-out simulated astronauts):** 98.8 % of problems caught, with 2.7 false alarms per person per month instead of 10 (−73 %).
+- **Detection (200 unseen simulated astronauts):** 95.2 % of problems caught, with 2.7 false alarms per person-month instead of 10, and 3.1 % of time in false alarm instead of 10.3 %.
+- **Real multi-week data (PMData, 16 people, ~4 months):** alerts fell 72 % (7.2 → 2.1 per person-month), and time in alert fell from 35.6 % to 6.3 %.
 - **Real Inspiration4 blood data:** ensemble AUROC 0.85, nested estimate 0.68.
 
 ## Feature modules
@@ -74,7 +75,7 @@ New capabilities live in `js/features/` and plug into the app via a small API (`
 | **Cognition tests** (`cognition.js`) | Digit span (working memory) and math processing (speed), compared with your own history, alongside the PVT. |
 | **Nutrition & hydration** (`nutrition.js` + engine) | New health domain: body mass, fluid and energy intake, with its own rule and protocol P-NUT-01. |
 | **Space weather** (`spaceweather.js`) | Solar-particle-event warning with countdown, storm-shelter timer and dose received / avoided. |
-| **Weekly trends** (`weekly.js` + `js/weekly.js`) | A separate multi-week detection system. Readings are averaged per mission week, then the last 8 complete weeks are tested for slow drifts (Mann–Kendall, p < 0.01, with Sen's slope and weeks-to-limit) and persistent shifts from your own baseline (robust CUSUM with change-point onset). It has its own Weekly review screen, an overview card, and a "Weekly system" column in the mission replay. |
+| **Weekly trends** (`weekly.js` + `js/weekly.js`) | Multi-week trend detection. Readings are averaged per mission week, and the last 8 complete weeks are tested for slow drifts (Mann–Kendall, p < 0.01, with Sen's slope and weeks-to-limit). A CUSUM change-point estimate dates when a confirmed drift began. Confirmed drifts also alert in the daily checks. It has its own Weekly review screen, an overview card, and a "Weekly system" column in the replay. |
 | **Mission replay** (`replay.js`) | Replays days 90–147 through the engine and measures early-warning lead time against fixed medical limits; hosts judge mode (`?judge`). |
 | **EVA readiness** (`eva.js`) | GO / CAUTION / NO-GO before a spacewalk from alertness, sleep debt, symptoms, vitals, space weather, dose and airlock kit, with reasons and fixes. |
 | **Live sensor** (`live.js`) | Any Bluetooth LE heart-rate strap/watch (standard Heart Rate profile): live HR, RR intervals and RMSSD vs your baseline; saves a resting reading. Simulator for browsers without Web Bluetooth. |
@@ -135,32 +136,63 @@ All screens pass in all three themes. This complements testing with VoiceOver or
 ## Detection benchmark: fewer false alarms
 
 `tools/benchmark.js` generates randomized simulated astronauts:
-- **Between-person spread:** taken from the real MMASH data (resting HR ±5.4 bpm, HRV ±14.5 ms).
-- **Realistic noise:** day-to-day noise is autocorrelated (AR(1), φ = 0.5), so today's value resembles yesterday's.
+- **Between-person spread:** taken from real MMASH data.
+- **Realistic noise:** day-to-day noise is autocorrelated (AR(1), φ = 0.5).
 - **Personal baselines:** 10 preflight readings each.
-- **Problems:** 40 % stay healthy. The rest develop 1–3 problems with random indicator, onset, speed and size (1.5–4 SD).
+- **Problems:** 40 % stay healthy. The rest develop problems with random indicator, onset, speed and size.
 
-Detectors run in real time, with no look-ahead. Variants were compared on 200 people (seeds 1–200), and the chosen one was confirmed on 200 different people (seeds 1001–1200):
+Detectors run in real time. Variants were compared on seeds 1–200, and the chosen one was confirmed on unseen seeds 1001–1200. Two scoring rules keep the comparison honest:
+- **A detection must be a new alarm** that starts on or after the problem begins.
+- **False alarms are counted twice:** as separate alarms, and as the share of time a healthy indicator spends in false alarm, so a stuck alarm can't hide.
 
-| Detector (held-out people) | Problems caught | Median delay | False alarms / person-month |
-|---|---|---|---|
-| v1: 3-day mean ≥ 2 SD + 14-day line projection + all limits | 99.2 % | 7 d | 9.96 |
-| Weekly trend system alone | 98.8 % | 16 d | 2.10 |
-| **v2 (shipped): robust EWMA + jump ≥ 4 SD + weekly tests + safety limits** | **98.8 %** | **10 d** | **2.65** |
+| Detector (held-out people) | Caught | Median delay | False alarms / person-month | Time in false alarm |
+|---|---|---|---|---|
+| v1: 3-day mean ≥ 2 SD + 14-day line projection + all limits | 94.8 % | 8 d | 9.96 | 10.3 % |
+| **v3 (shipped)** | **95.2 %** | **12 d** | **2.71** | **3.1 %** |
 
-What v2 changes, and why:
-- **EWMA instead of the 2-SD rule.** The diagnostic runs showed the 2-SD rule on 3-day means caused about 4.8 false alarms a month. v2 uses a robust EWMA control chart (λ = 0.2, limit widened for autocorrelation, each day capped at ±4 SD so one spike can't linger).
-- **Weekly tests instead of the line projection.** The 14-day straight-line projection caused about 5.3 false alarms a month. v2 uses the statistical weekly trend tests instead.
-- **Population "monitoring" limits no longer alarm on their own once a personal baseline exists**, because they fired on healthy people whose normal sits near them. Action and urgent limits (fever, high blood pressure) always alarm.
-- **Sudden jumps of 4 SD or more** are flagged the same day.
+**What v3 does:**
+- **Robust EWMA control chart:** λ = 0.2, limit widened for autocorrelation, each day's input capped at ±4 SD.
+- **Same-day flag for sudden jumps** of 4 SD or more.
+- **Weekly Mann–Kendall trend test** for slow drifts.
+- **Action and urgent limits always alarm.** Population monitoring limits alarm only while no personal baseline exists. Exercise thresholds are treated as a prescription *target*, enforced only for someone whose normal meets them.
 
-**The trade-off:** about 3 days later on average (small problems: 14 days instead of 8) for 73 % fewer false alarms. Large problems are still all caught, at a 9-day median.
+> **Correction.** An earlier version of this README claimed the previous detector (v2) caught 98.8 % of problems. That figure came from a scoring flaw: an alarm already running before a problem began was counted as detecting it. Re-scored, v2 caught 72 %, and its weekly CUSUM test kept healthy indicators in false alarm 29 % of the time. CUSUM latches onto the small error any estimated baseline has. v3 removed CUSUM from alerting; it now only estimates when a confirmed drift began.
 
-The alert sensitivity setting moves the EWMA alert level: Sensitive 2.75, Standard 3.25, Conservative 3.75. Sparse indicators (weekly labs, scans) keep the v1 rules because the benchmark didn't cover them. The benchmark is simulation: it shows the method's behaviour under realistic noise, not clinical performance.
+**Also tested:**
+- **Sparse measurements** (weekly labs and scans, `--sparse`). No rule dominated. The current rule (94 % caught, 2.0 false alarms per month) stays the default. A confirm-twice rule (90 %, 0.97 a month) is what the Conservative setting uses.
+- **Problems spanning several measurements** (`--syndromes`, e.g. sleep loss moving sleep, reaction time and mood a little each). A combined pattern score added 1.2 points of detection for about 11 % more false alarms. It's adopted only where no single measurement has alarmed.
+
+The benchmark is simulation: it shows how the detector behaves under realistic noise, not clinical performance. Real-data results follow.
 
 ```bash
-node tools/benchmark.js 200 "daily (current)|HELIOS engine v2 (as shipped)"
+node tools/benchmark.js 200 "v1: original daily engine|HELIOS engine (as shipped, v3)"
+node tools/benchmark.js --sparse
+node tools/benchmark.js --syndromes
 ```
+
+## Validation on real multi-week data (PMData)
+
+HELIOS was run on **16 real people over about 5 months**: daily Fitbit resting heart rate, sleep and very-active minutes, daily self-reported mood and stress, and weight and fluid logs.
+- **Setup:** each person's first 30 days served as their baseline, and the remaining ~4 months were judged day by day.
+- **Data:** only the small daily files (≈ 9 MB) are fetched, each checked against OSF's published SHA-256.
+
+```bash
+node tools/fetch-pmdata.js && node tools/pmdata-check.js
+```
+
+| 16 people, ~4 months each | v1 | v3 |
+|---|---|---|
+| Alerts per person per month | 7.2 | **2.1** (−72 %) |
+| Share of time an indicator is alerting | 35.6 % | **6.3 %** (−82 %) |
+
+**What the real data taught us:**
+- **The exercise prescription was wrongly enforced as a safety limit.** Ordinary people stayed in alert 74–90 % of the time until it became a target. That's now fixed.
+- **CSV parsing:** PMSys files contain quoted lists that break naive CSV splitting. HELIOS's own parser handles them.
+- **Scale coding:** 0 means "not answered", and stress is coded 5 = relaxed (verified from its +0.45 correlation with mood).
+
+These are healthy people living normal lives (colds, holidays, training), so not every alert is false. The alerts did not cluster around the 77 reported minor sports injuries, which is expected, because those don't change these measures.
+
+*PMData: Thambawita V. et al., "PMData: a sports logging dataset", ACM MMSys 2020, https://doi.org/10.1145/3339825.3394926, licensed CC BY 4.0. The raw data is not redistributed here.*
 
 ## Validation on real wearable data (PhysioNet MMASH)
 
@@ -193,7 +225,7 @@ Each recording covers about one day, so this validates the sensor, HRV and impor
 ## Quality checks
 
 ```bash
-npm test                      # asset-version check + 55 Node tests (MMASH tests run when the data is fetched)
+npm test                      # asset-version check + 59 Node tests (MMASH / PMData tests run when the data is fetched)
 ```
 
 - **Real-data tests:**
@@ -233,7 +265,7 @@ available in the crew menu.
   so a handful of readings can't produce an unrealistically tight band.
 - **"This is normal for me."** Re-baselines one indicator on your last 14 days (logged, and
   reversible).
-- **Alert sensitivity.** Choose Sensitive, Standard or Conservative. This moves the daily detector's smoothed alert level (2.75 / 3.25 / 3.75); for weekly lab values it is 1.5/2.5, 2/3 or 2.5/3.5 SD.
+- **Alert sensitivity.** Choose Sensitive, Standard or Conservative. This moves the daily detector's smoothed alert level (2.75 / 3.25 / 3.75). For weekly lab values, Sensitive and Standard use 1.5/2.5 and 2/3 SD, and Conservative waits for confirmation (one result ≥ 2.5 SD, or two in a row ≥ 1.5 SD).
 - **Private by design.** Everything stays in this browser. You can export a backup, restore it, or
   delete your profile and data.
 

@@ -10,7 +10,7 @@ On deep-space missions:
 ### What HELIOS does
 - **Learns each astronaut's normal.** It uses preflight data first, then learns from in-flight data and adapts slowly. Readings older than 14 days update the baseline, so a developing problem never becomes "normal".
 - **Judges every reading against that baseline.** It checks deviation in standard deviations, medical limits and a 14-day trend projection across 24 indicators in 7 domains.
-- **Watches for slow change too.** A separate weekly system runs trend tests (Mann–Kendall, Sen's slope, CUSUM) over 8 weeks to catch drifts that day-to-day noise hides.
+- **Watches for slow change too.** A weekly trend test (Mann–Kendall, Sen's slope) over 8 weeks catches drifts that day-to-day noise hides, and dates when they began.
 - **Explains and acts.** Each finding comes with its evidence, what to do now, a step-by-step protocol and who to involve: you, the onboard medical officer, or the flight surgeon.
 - **Works when Earth can't help.** It is offline and installable. There's a blackout mode for conjunction, offline triage guides, a medical kit with stock forecasting, and an EVA go/no-go check.
 
@@ -18,7 +18,9 @@ On deep-space missions:
 - **Mission replay (simulated mission):** HELIOS flagged **19** developing problems across the crew.
   - **13** never crossed a fixed medical limit, so a limit-only system would not have alarmed.
   - Where limits were crossed, HELIOS was never later, and up to **25 days** earlier (the commander's blood pressure).
-- **Low alarm fatigue (benchmark, 200 unseen simulated astronauts):** it catches **98.8 %** of problems with **2.7 false alarms per person per month instead of 10** (−73 %).
+- **Low alarm fatigue, measured two ways:**
+  - **200 unseen simulated astronauts:** it catches **95 %** of problems with **2.7 false alarms per person per month instead of 10**.
+  - **16 real people over 4 months (PMData):** alerts fell **72 %**, and the share of time in alert fell from 36 % to **6 %**.
 - **Real astronaut data (NASA OSDR, Inspiration4):** clinical-panel models separated the day-after-landing blood draw from normal draws.
   - Ensemble AUROC: **0.85** (p = 0.012).
   - Nested estimate: **0.68**.
@@ -29,7 +31,7 @@ On deep-space missions:
 - **Privacy:** data stays on the device, with optional AES-256 encryption, and sync is end-to-end encrypted.
 - **Interoperability:** HL7 FHIR export for ground medical systems, plus Apple Health and CSV import.
 - **Accessibility and languages:** WCAG AA contrast in three themes, screen-reader support, glove mode, and 6 languages (ESA, JAXA, ISRO and Roscosmos crews).
-- **Quality:** 55 automated tests, input sanitizing, and Terms & Conditions with clear "not a medical device" wording.
+- **Quality:** 59 automated tests, input sanitizing, and Terms & Conditions with clear "not a medical device" wording.
 
 ### Try it
 ```bash

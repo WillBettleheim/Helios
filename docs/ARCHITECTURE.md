@@ -52,7 +52,7 @@ flowchart TD
   e --> mon[Monitor ≥ 3.25]
   e --> act[Action ≥ 4.75]
   r --> jump{Jump ≥ 4 SD?} --> act
-  r --> wk[Weekly tests: Mann–Kendall · CUSUM] --> mon
+  r --> wk[Weekly Mann–Kendall trend test] --> mon
   r --> lim[Safety limits: Action / Urgent<br/>Monitor limits only while calibrating] --> act
   mon & act --> rules[Rules combine indicators + symptoms<br/>→ finding, evidence, actions, protocol, route]
 ```
@@ -65,12 +65,12 @@ flowchart TD
 2. The last 8 complete weeks are tested with:
    - **Mann–Kendall** (non-parametric) for a consistent trend, at p < 0.01 because about 24 indicators are tested
    - **Sen's slope** for the rate per week and the weeks until a limit is reached
-   - a **one-sided CUSUM** against the baseline, with each week capped at 3 SE so a single storm or sick day can't fake a shift; the start week is estimated with Page's change-point method
+   - a **CUSUM change-point estimate** of the week a confirmed drift began. It doesn't raise alerts: on the benchmark it latched onto the small error any estimated baseline has.
 3. Expected in-flight trends (bone density) are removed first, and cumulative totals aren't trend-tested.
 
 Since detector v2, the daily detector also uses these weekly tests (see below), so any slow drift they confirm raises an alert. On their own they caught the commander's slow resting-heart-rate rise on day 112.
 
-Detector v2 was chosen on a randomized benchmark (`tools/benchmark.js`) and confirmed on held-out simulated people: 98.8 % detection with 2.7 false alarms per person-month, against 10 for v1. The alert sensitivity setting moves the EWMA alert level (2.75 / 3.25 / 3.75). Sparse indicators (weekly labs, scans) keep the v1 2/3-SD rules.
+Detector v3 was chosen on a randomized benchmark (`tools/benchmark.js`) and confirmed on held-out simulated people: 95.2 % detection with 2.7 false alarms per person-month and 3.1 % time in false alarm, against 94.8 %, 10.0 and 10.3 % for v1. On 16 real people over ~4 months (PMData), alerts fell 72 % and time in alert fell from 35.6 % to 6.3 %. The alert sensitivity setting moves the EWMA alert level (2.75 / 3.25 / 3.75). Sparse indicators (weekly labs, scans) keep the v1 2/3-SD rules; Conservative uses confirm-twice. Pattern findings combine related measurements when none has alarmed alone. Exercise thresholds are prescription targets, not safety limits.
 
 ## Code map
 
@@ -86,7 +86,7 @@ Detector v2 was chosen on a randomized benchmark (`tools/benchmark.js`) and conf
 | `tools/evaluate.js` | Leave-one-crew-out and nested evaluation on NASA OSDR data; exports `js/lab-model.js` |
 | `tools/sync-server.js` | Ciphertext-only sync relay with optional light-time delay |
 | `tools/a11y-audit.js` | In-page WCAG checks |
-| `test/*.test.js` | 55 Node tests (`npm test`) |
+| `test/*.test.js` | 59 Node tests (`npm test`) |
 
 ## Data and validation
 

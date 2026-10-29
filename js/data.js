@@ -111,6 +111,16 @@ window.H = window.H || {};
       base: [7.5, 0.9], cadence: 1, onDemand: true, clamp: [1, 10], step: 0.5, seed: 7001, src: 'Daily check-in', limits: { monitor: 5, action: 3 } },
   );
 
+  // Physiologically possible ranges. Values outside are data errors (wrong unit, typo, sensor
+  // glitch), not medical findings, and are rejected on entry instead of raising alarms.
+  const PLAUSIBLE = {
+    rhr: [25, 220], hrv: [3, 300], sbp: [60, 260], bmd: [-40, 40], uca: [0, 2000], exer: [0, 900], grip: [1, 120],
+    lymph: [0, 30], crp: [0, 500], vir: [0, 1e9], temp: [30, 44], dose: [0, 1000], cumdose: [0, 20000],
+    sleep: [0, 18], sleff: [10, 100], mood: [1, 10], stress: [1, 10], social: [1, 10], pvt: [100, 3000],
+    rnfl: [-100, 200], headache: [0, 7], mass: [25, 300], fluid: [0, 15], kcal: [0, 12000],
+  };
+  const plausible = (id, v) => { const r = PLAUSIBLE[id]; return Number.isFinite(v) && (!r || (v >= r[0] && v <= r[1])); };
+
   const ENV_INDICATORS = [
     { id: 'co2', name: 'Cabin ppCO₂', short: 'CO₂', unit: 'mmHg', dec: 2, bad: 'up', base: [2.2, 0.15], useZ: false,
       cadence: 1, src: 'Major constituent analyzer', limits: { monitor: 3.0, action: 4.0, urgent: 6.0 } },
@@ -248,7 +258,7 @@ window.H = window.H || {};
         series.mood[D] = checkin.mood;
         series.stress[D] = checkin.stress;
         if (checkin.social != null) series.social[D] = checkin.social;
-        Object.entries(checkin.vitals || {}).forEach(([id, x]) => { if (x != null && series[id] && !INDICATORS.find((i) => i.id === id).derived) series[id][D] = x; });
+        Object.entries(checkin.vitals || {}).forEach(([id, x]) => { if (x != null && series[id] && plausible(id, x) && !INDICATORS.find((i) => i.id === id).derived) series[id][D] = x; });
       }
       const tests = ((store.pvt || {})[c.id] || []).filter((t) => t.day === D);
       if (tests.length) series.pvt[D] = tests[tests.length - 1].mean;
@@ -310,7 +320,7 @@ window.H = window.H || {};
     Object.keys(records).sort().forEach((date) => {
       const d = dayOf(date, profile.start);
       Object.entries(records[date]).forEach(([id, v]) => {
-        if (!LOGGABLE.includes(id) || !Number.isFinite(v)) return;
+        if (!LOGGABLE.includes(id) || !plausible(id, v)) return;
         if (d < 1) (pre[id] = pre[id] || []).push(v);
         else if (d <= day) series[id][d] = v;
       });
@@ -324,7 +334,7 @@ window.H = window.H || {};
       if (ci.mood != null) series.mood[d] = ci.mood;
       if (ci.stress != null) series.stress[d] = ci.stress;
       if (ci.social != null) series.social[d] = ci.social;
-      Object.entries(ci.vitals || {}).forEach(([id, v]) => { if (v != null && series[id]) series[id][d] = v; });
+      Object.entries(ci.vitals || {}).forEach(([id, v]) => { if (v != null && series[id] && plausible(id, v)) series[id][d] = v; });
       ha[d] = ci.symptoms.includes('headache') ? 1 : 0;
     });
     ((store.pvt || {}).me || []).forEach((t) => { if (t.day >= 1 && t.day <= day) series.pvt[t.day] = t.mean; });
@@ -343,5 +353,5 @@ window.H = window.H || {};
     return { series, pre, offsets: {}, headacheDaily: ha, doseRate: median(doses) || 0, day };
   }
 
-  Object.assign(H, { MISSION, DOMAINS, INDICATORS, ENV_INDICATORS, CREW, LOGGABLE, buildDataset, buildPersonal, personalDay, dayOf, dayToDate });
+  Object.assign(H, { MISSION, DOMAINS, INDICATORS, ENV_INDICATORS, CREW, LOGGABLE, PLAUSIBLE, plausible, buildDataset, buildPersonal, personalDay, dayOf, dayToDate });
 })(window.H);

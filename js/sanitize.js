@@ -30,15 +30,16 @@ window.H = window.H || {};
       sensitivity: H.SENSITIVITY && H.SENSITIVITY[p.sensitivity] ? p.sensitivity : 'standard',
       baseline: {}, rebase: {}, created: num(p.created, 0, 1e15, Date.now()), updated: num(p.updated, 0, 1e15, 0),
     };
-    Object.entries(obj(p.baseline)).forEach(([k, v]) => { const x = num(v, -1e6, 1e6, null); if (isInd(k) && x != null) out.baseline[k] = x; });
+    Object.entries(obj(p.baseline)).forEach(([k, v]) => { if (isInd(k) && ok(k, v)) out.baseline[k] = Number(v); });
     Object.entries(obj(p.rebase)).forEach(([k, v]) => { const x = int(v, 1, 100000, null); if (isInd(k) && x != null) out.rebase[k] = x; });
     return out;
   }
-  const values = (v) => Object.fromEntries(Object.entries(obj(v)).filter(([k, x]) => isInd(k) && x !== null && num(x, -1e7, 1e7, null) != null).map(([k, x]) => [k, Number(x)]));
+  const ok = (k, x) => x !== null && x !== '' && H.plausible(k, Number(x));
+  const values = (v) => Object.fromEntries(Object.entries(obj(v)).filter(([k, x]) => isInd(k) && ok(k, x)).map(([k, x]) => [k, Number(x)]));
   function checkin(c) {
     c = obj(c);
     const vit = {};
-    Object.entries(obj(c.vitals)).forEach(([k, x]) => { if (isInd(k)) vit[k] = x === null ? null : num(x, -1e7, 1e7, null); });
+    Object.entries(obj(c.vitals)).forEach(([k, x]) => { if (isInd(k)) vit[k] = ok(k, x) ? Number(x) : null; });
     return {
       sleepQ: int(c.sleepQ, 1, 5, 3), mood: num(c.mood, 1, 10, null), energy: num(c.energy, 1, 10, null), stress: num(c.stress, 1, 10, null),
       social: num(c.social, 1, 10, null), talks: int(c.talks, 0, 50, null),

@@ -105,6 +105,12 @@ window.H = window.H || {};
       base: [2900, 220], cadence: 1, step: 10, src: 'Food barcode log', limits: { monitor: 2300, action: 1900 } },
   );
 
+  // Added later: simulated from its own random stream so the original scenario is unchanged.
+  INDICATORS.push(
+    { id: 'social', domain: 'behav', name: 'Connection with crew (self-report)', short: 'Connection', unit: '/10', dec: 1, bad: 'down',
+      base: [7.5, 0.9], cadence: 1, onDemand: true, clamp: [1, 10], step: 0.5, seed: 7001, src: 'Daily check-in', limits: { monitor: 5, action: 3 } },
+  );
+
   const ENV_INDICATORS = [
     { id: 'co2', name: 'Cabin ppCO₂', short: 'CO₂', unit: 'mmHg', dec: 2, bad: 'up', base: [2.2, 0.15], useZ: false,
       cadence: 1, src: 'Major constituent analyzer', limits: { monitor: 3.0, action: 4.0, urgent: 6.0 } },
@@ -142,6 +148,7 @@ window.H = window.H || {};
       bmd: [{ shape: 'ramp', from: 105, to: 147, delta: -1.1 }],
       uca: [{ shape: 'ramp', from: 110, to: 147, delta: 55 }],
       fluid: [{ shape: 'ramp', from: 118, to: 147, delta: -0.75 }],
+      social: [{ shape: 'ramp', from: 122, to: 147, delta: -2.0 }],
     },
     reyes: {
       hrv: [{ shape: 'ramp', from: 96, to: 147, delta: -15 }],
@@ -229,16 +236,18 @@ window.H = window.H || {};
       const rnd = mulberry32(1000 + ci * 7919);
       const series = {}, offsets = {};
       INDICATORS.forEach((ind) => {
-        offsets[ind.id] = Math.floor(rnd() * ind.cadence);
+        const r = ind.seed ? mulberry32(ind.seed + ci * 31) : rnd;
+        offsets[ind.id] = Math.floor(r() * ind.cadence);
         if (ind.derived) return;
         const mods = [].concat(GLOBAL_MODS[ind.id] || [], (CREW_MODS[c.id] || {})[ind.id] || []);
-        series[ind.id] = simulate(ind, mods, rnd, offsets[ind.id], ind.onDemand ? 0 : 0.03);
+        series[ind.id] = simulate(ind, mods, r, offsets[ind.id], ind.onDemand ? 0 : 0.03);
       });
 
       const checkin = ((store.checkins || {})[c.id] || {})[D];
       if (checkin) {
         series.mood[D] = checkin.mood;
         series.stress[D] = checkin.stress;
+        if (checkin.social != null) series.social[D] = checkin.social;
         Object.entries(checkin.vitals || {}).forEach(([id, x]) => { if (x != null && series[id] && !INDICATORS.find((i) => i.id === id).derived) series[id][D] = x; });
       }
       const tests = ((store.pvt || {})[c.id] || []).filter((t) => t.day === D);
@@ -314,6 +323,7 @@ window.H = window.H || {};
       if (d < 1 || d > day) return;
       if (ci.mood != null) series.mood[d] = ci.mood;
       if (ci.stress != null) series.stress[d] = ci.stress;
+      if (ci.social != null) series.social[d] = ci.social;
       Object.entries(ci.vitals || {}).forEach(([id, v]) => { if (v != null && series[id]) series[id][d] = v; });
       ha[d] = ci.symptoms.includes('headache') ? 1 : 0;
     });

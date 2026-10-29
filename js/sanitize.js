@@ -41,6 +41,7 @@ window.H = window.H || {};
     Object.entries(obj(c.vitals)).forEach(([k, x]) => { if (isInd(k)) vit[k] = x === null ? null : num(x, -1e7, 1e7, null); });
     return {
       sleepQ: int(c.sleepQ, 1, 5, 3), mood: num(c.mood, 1, 10, null), energy: num(c.energy, 1, 10, null), stress: num(c.stress, 1, 10, null),
+      social: num(c.social, 1, 10, null), talks: int(c.talks, 0, 50, null),
       symptoms: arr(c.symptoms).filter((s) => SYMPTOMS.includes(s)), vitals: vit, notes: str(c.notes, 1000),
       share: c.share === 'private' ? 'private' : 'cmo', t: num(c.t, 0, 1e15, 0),
     };
@@ -81,6 +82,8 @@ window.H = window.H || {};
     if (s.outcomes) out.outcomes = perCrew(s.outcomes, outcomes);
     if (s.medlog) out.medlog = perCrew(s.medlog, medlog);
     if (s.planner) out.planner = perCrew(s.planner, planner);
+    if (s.journal) out.journal = perCrew(s.journal, (o) => Object.fromEntries(Object.entries(obj(o)).filter(([k]) => /^\d{1,5}$/.test(k)).map(([k, v]) => [k, str(v, 4000)])));
+    if (s.blackout && num(obj(s.blackout).until, 0, 1e15, 0) > 0) { const b = obj(s.blackout); out.blackout = { since: num(b.since, 0, 1e15, 0), until: num(b.until, 0, 1e15, 0), days: int(b.days, 1, 60, 14), reason: str(b.reason, 40) }; }
     const mk = medkit(s.medkit);
     if (mk) out.medkit = mk;
     if (s.spaceWeather) {

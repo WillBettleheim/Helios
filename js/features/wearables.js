@@ -123,7 +123,8 @@ window.H = window.H || {};
   // order: 'mdy' (US) or 'dmy' for slash dates; ISO dates are unambiguous.
   function parseDate(s, order = 'mdy') {
     s = String(s || '').trim();
-    const ok = (y, mo, d) => (mo >= 1 && mo <= 12 && d >= 1 && d <= 31 ? `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}` : null);
+    if (/^\d+(\.\d+)?$/.test(s)) return null;          // a bare number is not a date (e.g. day 2, Excel serials)
+    const ok = (y, mo, d) => (+y >= 1900 && +y <= 2200 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31 ? `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}` : null);
     let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
     if (m) return ok(m[1], +m[2], +m[3]);
     m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/);
@@ -156,7 +157,7 @@ window.H = window.H || {};
     if (rows.length < 2) throw new Error('No data rows found.');
     const head = rows[0].map((h) => h.trim());
     const lower = head.map((h) => h.toLowerCase());
-    const dateCol = lower.findIndex((h) => /\b(date|day|time|timestamp)\b/.test(h));
+    const dateCol = lower.findIndex((h) => /\b(date|day|night|time|timestamp)\b/.test(h));
     const map = {};
     H.LOGGABLE.forEach((id) => {
       const syn = SYN[id] || [id];
@@ -166,13 +167,32 @@ window.H = window.H || {};
       }
     });
     const body = rows.slice(1);
-    return { name, head, rows: body, dateCol, map, order: dateCol >= 0 ? detectOrder(body.slice(0, 200).map((r) => r[dateCol])) : 'mdy' };
+    const out = { name, head, rows: body, dateCol, map, order: dateCol >= 0 ? detectOrder(body.slice(0, 200).map((r) => r[dateCol])) : 'mdy' };
+    detectDayNumbers(out);
+    return out;
+  }
+
+  // Some exports number days (1, 2, 3…) instead of giving dates. Detect that and ask for day 1.
+  function detectDayNumbers(c) {
+    const vals = c.dateCol >= 0 ? c.rows.map((r) => String(r[c.dateCol] || '').trim()).filter(Boolean) : [];
+    c.dayNumbers = vals.length > 0 && vals.every((v) => /^\d{1,3}$/.test(v) && +v >= 1 && +v <= 400);
+    if (c.dayNumbers) {
+      const max = Math.max(...vals.map(Number)), d = new Date();
+      d.setDate(d.getDate() - (max - 1));
+      c.dayOne = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+  }
+  function dayNumberDate(c, v) {
+    const n = parseInt(v, 10);
+    if (!(n >= 1 && n <= 400) || !c.dayOne) return null;
+    const d = new Date(c.dayOne + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n - 1);
+    return d.toISOString().slice(0, 10);
   }
 
   function importCsvMapped() {
     const c = ui.csv, agg = {};
     c.rows.forEach((r) => {
-      const date = parseDate(r[c.dateCol], c.order);
+      const date = c.dayNumbers ? dayNumberDate(c, r[c.dateCol]) : parseDate(r[c.dateCol], c.order);
       if (!date) return;
       Object.entries(c.map).forEach(([id, { col, unit }]) => {
         if (col < 0) return;
@@ -190,9 +210,9 @@ window.H = window.H || {};
     const recs = (store.personal = store.personal || { records: {} }).records;
     let n = 0;
     Object.entries(result.byDate).forEach(([date, vals]) => { recs[date] = Object.assign(recs[date] || {}, vals); n += Object.keys(vals).length; });
-    app.log(`Imported ${n} daily values over ${result.days} days from ${source}`, 'import');
+    app.log(`Imported ${n} daily value${n === 1 ? '' : 's'} over ${result.days} day${result.days === 1 ? '' : 's'} from ${source}`, 'import');
     app.recompute();
-    app.toast(`Imported ${n} daily values over ${result.days} days from ${source}${result.rejected ? `; ${result.rejected} implausible value${result.rejected === 1 ? '' : 's'} skipped (check units)` : ''}. HELIOS is updating your baselines.`);
+    app.toast(`Imported ${n} daily value${n === 1 ? '' : 's'} over ${result.days} day${result.days === 1 ? '' : 's'} from ${source}${result.rejected ? `; ${result.rejected} implausible value${result.rejected === 1 ? '' : 's'} skipped (check units)` : ''}. HELIOS is updating your baselines.`);
   }
 
   // ---------- view ----------
@@ -240,7 +260,8 @@ window.H = window.H || {};
       <h2 class="ct">Match columns · ${esc(c.name)} <span class="muted small">(${c.rows.length} rows)</span></h2>
       <div class="map-grid">
         <div class="field"><label for="wm-date">Date column</label><select id="wm-date" class="input" data-change="wear-datecol">${c.dateCol < 0 ? '<option value="-1" selected>— choose —</option>' : ''}${c.head.map((h, i) => `<option value="${i}" ${c.dateCol === i ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></div>
-        <div class="field"><label for="wm-order">Date format</label><select id="wm-order" class="input" data-change="wear-order"><option value="mdy" ${c.order !== 'dmy' ? 'selected' : ''}>Month/Day/Year</option><option value="dmy" ${c.order === 'dmy' ? 'selected' : ''}>Day/Month/Year</option></select></div>
+        ${c.dayNumbers ? `<div class="field"><label for="wm-day1">Day 1 is <small>this file numbers days instead of dates</small></label><input id="wm-day1" type="date" value="${esc(c.dayOne)}" data-change="wear-day1"></div>`
+          : `<div class="field"><label for="wm-order">Date format</label><select id="wm-order" class="input" data-change="wear-order"><option value="mdy" ${c.order !== 'dmy' ? 'selected' : ''}>Month/Day/Year</option><option value="dmy" ${c.order === 'dmy' ? 'selected' : ''}>Day/Month/Year</option></select></div>`}
         ${H.LOGGABLE.filter((id) => SYN[id]).map((id) => {
           const m = c.map[id] || { col: -1 };
           return `<div class="field ${m.col >= 0 ? 'matched' : ''}"><label for="wm-${id}">${esc(label(id))}</label><div class="map-row">
@@ -272,7 +293,8 @@ window.H = window.H || {};
     if (f.size > 50e6) { app.toast('CSV is larger than 50 MB.'); return; }
     f.text().then((t) => { try { ui.csv = prepareCsv(f.name, t); } catch (e) { app.toast(e.message); } app.render(); });
   });
-  H.bus.on('change:wear-datecol', (el) => { ui.csv.dateCol = +el.value; ui.csv.order = detectOrder(ui.csv.rows.slice(0, 200).map((r) => r[ui.csv.dateCol])); app.render(); });
+  H.bus.on('change:wear-datecol', (el) => { ui.csv.dateCol = +el.value; ui.csv.order = detectOrder(ui.csv.rows.slice(0, 200).map((r) => r[ui.csv.dateCol])); detectDayNumbers(ui.csv); app.render(); });
+  H.bus.on('change:wear-day1', (el) => { if (/^\d{4}-\d{2}-\d{2}$/.test(el.value)) ui.csv.dayOne = el.value; });
   H.bus.on('change:wear-order', (el) => { ui.csv.order = el.value === 'dmy' ? 'dmy' : 'mdy'; });
   H.bus.on('change:wear-col', (el) => {
     const id = el.dataset.id, col = +el.value;
@@ -289,5 +311,5 @@ window.H = window.H || {};
   });
   H.bus.on('slot:profile-bottom', () => `<div class="card"><h2 class="ct">${ICON.import || ''} ${T('Import from wearables')}</h2><p class="muted small">Apple Health, Fitbit, Garmin, Oura, Whoop or any CSV.</p><button class="btn sm primary" data-action="nav" data-view="import">${T('Open importer')}</button></div>`);
 
-  H.wearables = { parseCsv, prepareCsv, parseDate, detectOrder, guessUnit, finish, parseApple, APPLE };
+  H.wearables = { parseCsv, prepareCsv, parseDate, detectOrder, guessUnit, finish, parseApple, importCsvMapped: (c) => { const saved = ui.csv; ui.csv = c; try { return importCsvMapped(); } finally { ui.csv = saved; } }, APPLE };
 });

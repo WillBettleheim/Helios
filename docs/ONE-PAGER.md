@@ -10,6 +10,7 @@ On deep-space missions:
 ### What HELIOS does
 - **Learns each astronaut's normal.** It uses preflight data first, then learns from in-flight data and adapts slowly. Readings older than 14 days update the baseline, so a developing problem never becomes "normal".
 - **Judges every reading against that baseline.** It checks deviation in standard deviations, medical limits and a 14-day trend projection across 24 indicators in 7 domains.
+- **Watches for slow change too.** A separate weekly system runs trend tests (Mann–Kendall, Sen's slope, CUSUM) over 8 weeks to catch drifts that day-to-day noise hides.
 - **Explains and acts.** Each finding comes with its evidence, what to do now, a step-by-step protocol and who to involve: you, the onboard medical officer, or the flight surgeon.
 - **Works when Earth can't help.** It is offline and installable. There's a blackout mode for conjunction, offline triage guides, a medical kit with stock forecasting, and an EVA go/no-go check.
 
@@ -27,7 +28,7 @@ On deep-space missions:
 - **Privacy:** data stays on the device, with optional AES-256 encryption, and sync is end-to-end encrypted.
 - **Interoperability:** HL7 FHIR export for ground medical systems, plus Apple Health and CSV import.
 - **Accessibility and languages:** WCAG AA contrast in three themes, screen-reader support, glove mode, and 6 languages (ESA, JAXA, ISRO and Roscosmos crews).
-- **Quality:** 33 automated tests, input sanitizing, and Terms & Conditions with clear "not a medical device" wording.
+- **Quality:** 48 automated tests, input sanitizing, and Terms & Conditions with clear "not a medical device" wording.
 
 ### Try it
 ```bash

@@ -56,6 +56,19 @@ flowchart TD
   mon & act & early --> rules[Rules combine indicators + symptoms<br/>→ finding, evidence, actions, protocol, route]
 ```
 
+### Weekly trend system (separate)
+
+`js/weekly.js` runs independently of the daily engine, using the same personal baselines.
+
+1. Daily readings are averaged per mission week. A week needs at least 3 readings for daily indicators.
+2. The last 8 complete weeks are tested with:
+   - **Mann–Kendall** (non-parametric) for a consistent trend, at p < 0.01 because about 24 indicators are tested
+   - **Sen's slope** for the rate per week and the weeks until a limit is reached
+   - a **one-sided CUSUM** against the baseline, with each week capped at 3 SE so a single storm or sick day can't fake a shift; the start week is estimated with Page's change-point method
+3. Expected in-flight trends (bone density) are removed first, and cumulative totals aren't trend-tested.
+
+On the simulated mission it independently caught 19 of the 21 problems. It's usually slower than the daily checks, because it judges whole weeks, but it caught the commander's slow resting-heart-rate rise 22 days earlier.
+
 Thresholds adjust with the alert sensitivity setting (Sensitive 1.5/2.5 SD, Standard 2/3, Conservative 2.5/3.5).
 
 ## Code map
@@ -64,14 +77,15 @@ Thresholds adjust with the alert sensitivity setting (Sensitive 1.5/2.5 SD, Stan
 |---|---|
 | `js/data.js` | Mission, crew, the 24 indicators, deterministic simulator, personal series builder |
 | `js/engine.js` | Indicator assessment, personal baselines, rules, readiness |
+| `js/weekly.js` | Separate multi-week trend detection (Mann–Kendall, Sen's slope, CUSUM) |
 | `js/sanitize.js` | Bounds and validates every stored, restored or synced record |
 | `js/vault.js` | Optional AES-256-GCM encryption at rest (PBKDF2 from the PIN) |
 | `js/app.js` | Shell, core views, theme, lock screen, feature API (`H.app`) and event bus (`H.bus`) |
-| `js/features/*.js` | 18 feature modules, each self-registering (replay, EVA, live sensor, labs, triage, …) |
+| `js/features/*.js` | 19 feature modules, each self-registering (replay, EVA, live sensor, labs, triage, …) |
 | `tools/evaluate.js` | Leave-one-crew-out and nested evaluation on NASA OSDR data; exports `js/lab-model.js` |
 | `tools/sync-server.js` | Ciphertext-only sync relay with optional light-time delay |
 | `tools/a11y-audit.js` | In-page WCAG checks |
-| `test/*.test.js` | 33 Node tests (`npm test`) |
+| `test/*.test.js` | 48 Node tests (`npm test`) |
 
 ## Data and validation
 

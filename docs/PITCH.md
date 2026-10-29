@@ -46,8 +46,9 @@ Every number below comes from the app itself (Mission replay and Model validatio
 
 ## Likely judge questions
 
-- **"Isn't this just thresholds?"** No. The thresholds are personal (z-scores against each astronaut's own baseline), trends are projected 14 days ahead, and the rules combine signals into explained findings. The replay shows the difference: 15 problems that fixed limits missed.
+- **"What about slow changes?"** A second, separate weekly system averages each week and runs statistical trend tests (Mann–Kendall, CUSUM). In the replay it independently caught 19 of 21 problems, and it caught the commander's slow heart-rate rise 22 days before the daily checks did.
+- **"Isn't this just thresholds?" No. The thresholds are personal (z-scores against each astronaut's own baseline), trends are projected 14 days ahead, and the rules combine signals into explained findings. The replay shows the difference: 15 problems that fixed limits missed.
 - **"Is the data real?"** The lab models are trained and tested on real NASA OSDR data from the Inspiration4 crew. The demo mission's daily wearable data is simulated, because no open in-flight astronaut wearable data exists. The live sensor reads real hardware.
 - **"How good is the model really?"** The ensemble scores AUROC 0.85, and the nested estimate is 0.68. With four people, both are indicative, and the app says so on its own validation page.
 - **"Privacy?"** Everything stays on the device. There's optional AES-256 encryption with a PIN. Sync is end-to-end encrypted, and private behavioural answers never reach the medical officer's view.
-- **"Could it work for real?"** It works offline and installs as an app. It exports HL7 FHIR for ground medical systems and reads standard Bluetooth heart-rate sensors. There are 33 automated tests, and every screen passes WCAG AA contrast.
+- **"Could it work for real?"** It works offline and installs as an app. It exports HL7 FHIR for ground medical systems and reads standard Bluetooth heart-rate sensors. There are 48 automated tests, and every screen passes WCAG AA contrast.

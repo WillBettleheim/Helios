@@ -73,6 +73,7 @@ New capabilities live in `js/features/` and plug into the app via a small API (`
 | **Cognition tests** (`cognition.js`) | Digit span (working memory) and math processing (speed), compared with your own history, alongside the PVT. |
 | **Nutrition & hydration** (`nutrition.js` + engine) | New health domain: body mass, fluid and energy intake, with its own rule and protocol P-NUT-01. |
 | **Space weather** (`spaceweather.js`) | Solar-particle-event warning with countdown, storm-shelter timer and dose received / avoided. |
+| **Weekly trends** (`weekly.js` + `js/weekly.js`) | A separate multi-week detection system. Readings are averaged per mission week, then the last 8 complete weeks are tested for slow drifts (Mann–Kendall, p < 0.01, with Sen's slope and weeks-to-limit) and persistent shifts from your own baseline (robust CUSUM with change-point onset). It has its own Weekly review screen, an overview card, and a "Weekly system" column in the mission replay. |
 | **Mission replay** (`replay.js`) | Replays days 90–147 through the engine and measures early-warning lead time against fixed medical limits; hosts judge mode (`?judge`). |
 | **EVA readiness** (`eva.js`) | GO / CAUTION / NO-GO before a spacewalk from alertness, sleep debt, symptoms, vitals, space weather, dose and airlock kit, with reasons and fixes. |
 | **Live sensor** (`live.js`) | Any Bluetooth LE heart-rate strap/watch (standard Heart Rate profile): live HR, RR intervals and RMSSD vs your baseline; saves a resting reading. Simulator for browsers without Web Bluetooth. |
@@ -133,7 +134,7 @@ All screens pass in all three themes. This complements testing with VoiceOver or
 ## Quality checks
 
 ```bash
-npm test                      # asset-version check + 40 Node tests
+npm test                      # asset-version check + 48 Node tests
 ```
 
 - **Real-data tests:**

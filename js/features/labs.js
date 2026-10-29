@@ -32,6 +32,16 @@ window.H = window.H || {};
     if (m.type === 'signature') return m.sel.reduce((s, j, i) => s + m.sign[i] * clip(z[j] ?? 0), 0) / m.k;
     return m.b + m.sel.reduce((s, j, i) => s + m.w[i] * clip(z[j] ?? 0), 0);
   }
+  const MIN_COVERAGE = 0.5;
+  // Values far outside the lab reference range are almost always a unit mistake (e.g. mmol/L vs mg/dL).
+  function unitSuspects(values) {
+    return LM.features.filter((f) => {
+      const x = values[f.id];
+      if (!Number.isFinite(x) || !f.range) return false;
+      const [lo, hi] = f.range;
+      return (hi != null && x > hi * 4) || (lo != null && lo > 0 && x < lo / 4);
+    });
+  }
   const pct = (ref, x) => (ref.filter((r) => r < x).length + 0.5 * ref.filter((r) => r === x).length) / ref.length;
 
   // Ensemble: average percentile of the draw's score among real normal Inspiration4 draws.
@@ -48,7 +58,8 @@ window.H = window.H || {};
     const drivers = [...used].map((j) => ({ f: LM.features[j], z: z[j] })).filter((d) => d.z != null && Math.abs(d.z) >= 1.5)
       .sort((a, b) => Math.abs(b.z) - Math.abs(a.z)).slice(0, 6);
     const level = value >= 90 ? 2 : value >= 75 ? 1 : 0;
-    return { value, flightLike, coverage, drivers, level, nPre: pre.length };
+    // With under half the panel entered the models are mostly guessing, so no verdict is given.
+    return { value, flightLike, coverage, drivers, level, nPre: pre.length, enough: coverage >= MIN_COVERAGE };
   }
 
   function rangeFlags(draw) {
@@ -82,11 +93,13 @@ window.H = window.H || {};
 
       ${ui.adding ? form() : ''}
 
-      ${res ? `<section class="lab-result lvl-${app.lv(res.level)}">
-        <div class="lab-score"><span class="eyebrow">${T('Spaceflight-shift score')}</span><div class="v-big mono">${res.value}<small>/100</small></div>${pill(res.level, VERDICT[res.level])}</div>
+      ${res ? `<section class="lab-result lvl-${res.enough ? app.lv(res.level) : 'monitor'}">
+        <div class="lab-score"><span class="eyebrow">${T('Spaceflight-shift score')}</span><div class="v-big mono ${res.enough ? '' : 'muted'}">${res.value}<small>/100</small></div>${res.enough ? pill(res.level, VERDICT[res.level]) : pill(1, T('Not enough values'))}</div>
         <div class="lab-text">
           <p>Your ${esc(latest.date)} draw scores higher than <b>${res.value}%</b> of normal Inspiration4 draws and higher than <b>${res.flightLike}%</b> of their day-after-landing draws.</p>
           ${res.drivers.length ? `<ul class="drivers">${res.drivers.map((d) => `<li><span>${esc(titleCase(d.f.name))}</span><span class="zbar ${d.z < 0 ? 'neg' : 'pos'}"><i style="width:${Math.min(50, Math.abs(d.z) * 10)}%"></i></span><span class="mono">${d.z > 0 ? '+' : ''}${d.z.toFixed(1)} SD</span></li>`).join('')}</ul>` : '<p class="muted small">No single value moved more than 1.5 SD from your baseline.</p>'}
+          ${res.enough ? '' : `<p class="t-monitor small"><b>Only ${Math.round(res.coverage * 100)}% of the panel is entered.</b> Enter at least half of the ${LM.features.length} values (in this draw and your preflight draws) for a meaningful score.</p>`}
+          ${unitSuspects(latest.values).length ? `<p class="t-action small"><b>Check units:</b> ${unitSuspects(latest.values).map((f) => `${esc(titleCase(f.name))} ${latest.values[f.id]} (expected ${esc(f.unit)})`).join(', ')}.</p>` : ''}
           <p class="muted small">Baseline: ${res.nPre} preflight draw${res.nPre > 1 ? 's' : ''} · ${Math.round(res.coverage * 100)}% of the ${LM.features.length} values entered. Validated on only 4 people after a 3-day flight — indicative, not diagnostic.</p>
         </div>
       </section>` : `<div class="empty">${ICON.labs || ''}<div><b>${pre.length ? T('Add an in-flight or post-flight draw to score it.') : T('Start with at least one preflight draw.')}</b><p>Or load a real Inspiration4 crew member's draws to see how the model behaves.</p></div></div>`}
@@ -114,16 +127,19 @@ window.H = window.H || {};
   H.bus.on('action:lab-add', () => { ui.adding = true; app.render(); });
   H.bus.on('action:lab-cancel', () => { ui.adding = false; app.render(); });
   H.bus.on('action:lab-del', (el) => {
-    store.labs[app.ui.crewId] = draws().filter((d) => d.id !== el.dataset.id);
+    const kept = draws().filter((d) => d.id !== el.dataset.id);
+    store.labs[app.ui.crewId] = kept;
     app.save(); app.render();
   });
   H.bus.on('change:lab-example', (el) => { ui.example = el.value; });
   H.bus.on('action:lab-load-example', () => {
     const ex = LM.examples.find((e) => e.id === ui.example);
-    const start = app.M.startISO;
-    const offset = (t) => (t[0] === 'L' ? -parseInt(t.slice(2), 10) : app.M.plannedDays + parseInt(t.slice(2), 10));
-    store.labs[app.ui.crewId] = ex.draws.filter((d) => ['L-92', 'L-44', 'L-3', 'R+1'].includes(d.t)).map((d) => {
-      const dt = new Date(start + 'T00:00:00Z'); dt.setUTCDate(dt.getUTCDate() + offset(d.t));
+    // Place the real timeline so the day-after-landing draw is today: landing yesterday, launch
+    // three days before that (Inspiration4 flew for three days), preflight draws counted back from launch.
+    const now = new Date(), today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    const offset = (t) => (t[0] === 'L' ? -1 - 3 - parseInt(t.slice(2), 10) : parseInt(t.slice(2), 10) - 1);
+    (store.labs = store.labs || {})[app.ui.crewId] = ex.draws.filter((d) => ['L-92', 'L-44', 'L-3', 'R+1'].includes(d.t)).map((d) => {
+      const dt = new Date(today); dt.setUTCDate(dt.getUTCDate() + offset(d.t));
       return { id: `ex-${ex.id}-${d.t}`, date: dt.toISOString().slice(0, 10), kind: d.kind, values: d.values, source: `Inspiration4 ${ex.id} ${d.t}` };
     });
     app.log(`Loaded Inspiration4 ${ex.id} blood draws as an example`, 'labs');
@@ -134,11 +150,13 @@ window.H = window.H || {};
     const fd = new FormData(f), values = {};
     LM.features.forEach((ft) => { const x = parseFloat(fd.get(ft.id)); if (Number.isFinite(x)) values[ft.id] = x; });
     if (!Object.keys(values).length) { app.toast('Enter at least one value.'); return; }
+    const sus = unitSuspects(values);
+    if (sus.length && !window.confirm(`These values look like a unit mix-up:\n\n${sus.map((x) => `• ${titleCase(x.name)}: ${values[x.id]} (expected ${x.unit}, normal ${x.range[0] ?? '–'}–${x.range[1] ?? '–'})`).join('\n')}\n\nSave anyway?`)) return;
     draws().push({ id: 'd' + Date.now(), date: String(fd.get('date')), kind: fd.get('kind'), values });
     ui.adding = false;
     app.log(`Blood draw added (${Object.keys(values).length} values)`, 'labs');
     app.render();
   });
 
-  H.labs = { score, zVector };
+  H.labs = { score, zVector, unitSuspects };
 });
